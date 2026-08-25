@@ -1,0 +1,19 @@
+{
+  "name": "pond-control",
+  "version": "1.0.0",
+  "description": "",
+  "main": "discover.js",
+  "scripts": {
+    "discover": "node --env-file-if-exists=.env discover.js",
+    "status": "node --env-file-if-exists=.env status.js",
+    "test": "node --test"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@noble/curves": "^2.3.0",
+    "node-kasa": "^0.10.2"
+  }
+}
