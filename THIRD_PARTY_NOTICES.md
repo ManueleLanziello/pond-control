@@ -1,8 +1,10 @@
 # Third-party notices
 
-Parts of `src/tpap/spake2.js`, `src/tpap/session.js`, and the TPAP handshake flow in
-`src/tpap/client.js` are adapted from `ioBroker.tapo`, specifically
-`src/lib/utils/tpapCipher.ts` and the TPAP-only portions of `src/lib/utils/p100.ts`.
+Parts of `src/tpap/spake2.js`, `src/tpap/session.js`, the TPAP handshake flow in
+`src/tpap/client.js`, and the KLAP v2 derivation/framing in `src/klap/` are
+adapted from `ioBroker.tapo`, specifically `src/lib/utils/tpapCipher.ts`,
+`src/lib/utils/newTpLinkCipher.ts`, and the relevant portions of
+`src/lib/utils/p100.ts`.
 
 Source: https://github.com/TA2k/ioBroker.tapo
 

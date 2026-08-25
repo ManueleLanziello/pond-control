@@ -6,6 +6,8 @@
   "scripts": {
     "discover": "node --env-file-if-exists=.env discover.js",
     "status": "node --env-file-if-exists=.env status.js",
+    "klap-probe": "node --env-file-if-exists=.env klap-probe.js",
+    "klap-status": "node --env-file-if-exists=.env klap-status.js",
     "test": "node --test"
   },
   "keywords": [],
