@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import { KlapV2Client } from '../src/klap/client.js';
+import { KlapV2Client, parseHandshake1Response } from '../src/klap/client.js';
 import {
   deriveKlapV2AuthHash,
   klapV2Handshake1Challenge,
@@ -52,6 +52,29 @@ test('KLAP session derives keys, signs, encrypts, decrypts, and increments signe
   assert.equal(second.sequence, (first.sequence + 1) | 0);
   assert.equal(session.decrypt(second.payload, second.sequence), '{"test":2}');
   session.destroy();
+});
+
+test('KLAP handshake1 parser accepts only the 48 protocol bytes', () => {
+  const body = Buffer.alloc(48, 0x42);
+  const parsed = parseHandshake1Response({ body, contentType: 'text/html' });
+  assert.deepEqual(parsed.remoteSeed, body.subarray(0, 16));
+  assert.deepEqual(parsed.serverChallenge, body.subarray(16, 48));
+});
+
+test('KLAP handshake1 parser identifies the 49-byte SHIP HTML response', () => {
+  const body = Buffer.from('<html><body><center>200 OK</center></body></html>');
+  assert.equal(body.length, 49);
+  assert.throws(
+    () => parseHandshake1Response({ body, contentType: 'text/html' }),
+    /risposta HTML di 49 byte al posto del frame KLAP di 48 byte/,
+  );
+});
+
+test('KLAP handshake1 parser does not truncate unknown oversized binary responses', () => {
+  assert.throws(
+    () => parseHandshake1Response({ body: Buffer.alloc(49), contentType: 'application\/octet-stream' }),
+    /risposta binaria di 49 byte, attesi 48/,
+  );
 });
 
 test('KLAP client completes v2 handshake and sends only get_device_info', async () => {
@@ -121,9 +144,7 @@ test('KLAP client completes v2 handshake and sends only get_device_info', async 
     ]);
     assert.ok(observed.every((item) => item.method === 'POST'));
     const output = logs.join('\n');
-    for (const phase of ['handshake1', 'challenge credenziali', 'handshake2', 'sessione stabilita', 'get_device_info']) {
-      assert.match(output, new RegExp(`KLAP ${phase}: OK`));
-    }
+    assert.equal(output, '');
     assert.doesNotMatch(output, new RegExp([sensitiveCookie, username, password].join('|')));
   } finally {
     console.log = originalLog;

@@ -8,6 +8,7 @@
     "status": "node --env-file-if-exists=.env status.js",
     "klap-probe": "node --env-file-if-exists=.env klap-probe.js",
     "klap-status": "node --env-file-if-exists=.env klap-status.js",
+    "dev": "node --env-file-if-exists=.env server.js",
     "test": "node --test"
   },
   "keywords": [],

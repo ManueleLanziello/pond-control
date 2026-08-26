@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import http from 'node:http';
+import { debug } from '../logger.js';
 import {
   deriveKlapV2AuthHash,
   klapV2Handshake1Challenge,
@@ -30,6 +31,7 @@ function postBinary({ ip, port, path, body, timeout, agent, cookie }) {
         status: response.statusCode || 0,
         body: Buffer.concat(chunks),
         setCookie: response.headers['set-cookie'] || [],
+        contentType: String(response.headers['content-type'] || ''),
       }));
     });
     request.setTimeout(timeout, () => request.destroy(new Error(`Timeout HTTP KLAP dopo ${timeout} ms`)));
@@ -38,8 +40,37 @@ function postBinary({ ip, port, path, body, timeout, agent, cookie }) {
   });
 }
 
+function debugHandshake1(response) {
+  const firstByte = response.body.length ? response.body[0].toString(16).padStart(2, '0') : '--';
+  const lastByte = response.body.length ? response.body.at(-1).toString(16).padStart(2, '0') : '--';
+  debug(
+    `KLAP handshake1 debug: status=${response.status}, length=${response.body.length}, `
+    + `content-type=${response.contentType || 'non dichiarato'}, first=0x${firstByte}, last=0x${lastByte}`,
+  );
+}
+
+export function parseHandshake1Response(response) {
+  const { body } = response;
+  if (!Buffer.isBuffer(body)) throw new Error('risposta handshake1 non binaria');
+  if (body.length === 48) {
+    return {
+      remoteSeed: Buffer.from(body.subarray(0, 16)),
+      serverChallenge: Buffer.from(body.subarray(16, 48)),
+    };
+  }
+
+  const isHtml = /^\s*(?:<!doctype\s+html|<html[\s>])/i.test(body.toString('utf8'));
+  if (isHtml) {
+    throw new Error(
+      `risposta HTML di ${body.length} byte al posto del frame KLAP di 48 byte; `
+      + 'verificare che l’accesso per servizi terzi sia abilitato nell’app Tapo',
+    );
+  }
+  throw new Error(`risposta binaria di ${body.length} byte, attesi 48`);
+}
+
 function phaseFailure(phase, error) {
-  console.log(`KLAP ${phase}: FALLITA (${error.message})`);
+  debug(`KLAP ${phase}: FALLITA (${error.message})`);
   throw error;
 }
 
@@ -67,11 +98,12 @@ export class KlapV2Client {
           timeout: this.timeout, agent: this.agent,
         });
         if (first.status !== 200) throw new Error(`HTTP ${first.status}`);
-        if (first.body.length !== 48) throw new Error(`risposta binaria di ${first.body.length} byte, attesi 48`);
+        debugHandshake1(first);
+        const parsed = parseHandshake1Response(first);
         this.cookie = sessionCookie(first.setCookie);
         if (!this.cookie) throw new Error('cookie di sessione TP_SESSIONID assente');
-        remoteSeed = Buffer.from(first.body.subarray(0, 16));
-        console.log('KLAP handshake1: OK');
+        remoteSeed = parsed.remoteSeed;
+        first.serverChallenge = parsed.serverChallenge;
       } catch (error) {
         return phaseFailure('handshake1', error);
       }
@@ -79,9 +111,8 @@ export class KlapV2Client {
       try {
         authHash = deriveKlapV2AuthHash(this.username, this.password);
         const expected = klapV2Handshake1Challenge(localSeed, remoteSeed, authHash);
-        const received = first.body.subarray(16);
+        const received = first.serverChallenge;
         if (!crypto.timingSafeEqual(expected, received)) throw new Error('credenziali non riconosciute dal challenge KLAP v2');
-        console.log('KLAP challenge credenziali: OK');
       } catch (error) {
         return phaseFailure('challenge credenziali', error);
       }
@@ -94,14 +125,12 @@ export class KlapV2Client {
         });
         challenge.fill(0);
         if (second.status !== 200) throw new Error(`HTTP ${second.status}`);
-        console.log('KLAP handshake2: OK');
       } catch (error) {
         return phaseFailure('handshake2', error);
       }
 
       try {
         this.session = new KlapV2Session(localSeed, remoteSeed, authHash);
-        console.log('KLAP sessione stabilita: OK');
       } catch (error) {
         return phaseFailure('sessione stabilita', error);
       }
@@ -131,10 +160,9 @@ export class KlapV2Client {
       let decoded;
       try { decoded = JSON.parse(plaintext); } catch { throw new Error('risposta decifrata non è JSON valido'); }
       if (decoded.error_code !== 0) throw new Error(`error_code=${decoded.error_code}`);
-      console.log('KLAP get_device_info: OK');
       return decoded.result || {};
     } catch (error) {
-      console.log(`KLAP get_device_info: FALLITA (${error.message})`);
+      debug(`KLAP get_device_info: FALLITA (${error.message})`);
       throw error;
     }
   }

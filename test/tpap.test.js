@@ -75,13 +75,15 @@ test('HTTP diagnostic recognizes compressed and non-UTF-8 bodies', () => {
 });
 
 test('TPAP discover HTTP 200 text/html falls back to pake:[2]', async () => {
-  const originalLog = console.log;
+  const originalDebug = process.env.TAPO_DEBUG;
+  const originalError = console.error;
   const logs = [];
   const jsonTransport = async () => new Response('<html><body>not JSON</body></html>', {
     status: 200,
     headers: { 'Content-Type': 'text/html', 'Content-Length': '39' },
   });
-  console.log = (...values) => logs.push(values.join(' '));
+  process.env.TAPO_DEBUG = '1';
+  console.error = (...values) => logs.push(values.join(' '));
   try {
     const client = new TpapClient({ ip: '192.0.2.1', username: 'not-logged', password: 'not-logged', jsonTransport });
     const protocol = await client.discoverProtocol();
@@ -91,7 +93,9 @@ test('TPAP discover HTTP 200 text/html falls back to pake:[2]', async () => {
     assert.ok(logs.some((line) => line.includes('fallback pake:[2]: OK')));
     assert.ok(logs.every((line) => !line.includes('not-logged')));
   } finally {
-    console.log = originalLog;
+    if (originalDebug === undefined) delete process.env.TAPO_DEBUG;
+    else process.env.TAPO_DEBUG = originalDebug;
+    console.error = originalError;
   }
 });
 

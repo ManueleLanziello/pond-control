@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { debug } from '../logger.js';
 import { createSpake2Exchange } from './spake2.js';
 import { TpapSession } from './session.js';
 import { createTpapHttpAgent, postTpapBuffer, postTpapJson } from './http.js';
@@ -164,28 +165,28 @@ export class TpapClient {
   }
 
   async discoverProtocol() {
-    console.log(`TPAP discover request: POST ${this.baseUrl}/`);
-    console.log('  Content-Type: application/json; charset=UTF-8');
-    console.log('  JSON: method=login, params.sub_method=discover (nessun segreto nel payload)');
+    debug(`TPAP discover request: POST ${this.baseUrl}/`);
+    debug('  Content-Type: application/json; charset=UTF-8');
+    debug('  JSON: method=login, params.sub_method=discover (nessun segreto nel payload)');
     let result;
     try {
       result = await this.postJson({ method: 'login', params: { sub_method: 'discover' } }, 'TPAP discover');
     } catch (error) {
       if (error.tpapHttpResponse?.status === 200) {
         this.discoverHttpResponse = error.tpapHttpResponse;
-        console.log(`TPAP discover: FALLITA (${error.tpapHttpResponse.format})`);
+        debug(`TPAP discover: FALLITA (${error.tpapHttpResponse.format})`);
         this.protocol = { pake: [2], userHashType: 0, port: this.port, tls: false, fallback: true };
-        console.log('TPAP discover fallback pake:[2]: OK');
+        debug('TPAP discover fallback pake:[2]: OK');
         return { ...this.protocol };
       }
-      console.log(`TPAP discover: FALLITA (${error.message})`);
+      debug(`TPAP discover: FALLITA (${error.message})`);
       throw error;
     }
     const tpap = result.tpap || result;
     if (!Array.isArray(tpap.pake) || !tpap.pake.length || tpap.pake.some((value) => !Number.isFinite(Number(value)))) {
-      console.log('TPAP discover: FALLITA (parametri TPAP non utilizzabili)');
+      debug('TPAP discover: FALLITA (parametri TPAP non utilizzabili)');
       this.protocol = { pake: [2], userHashType: 0, port: this.port, tls: false, fallback: true };
-      console.log('TPAP discover fallback pake:[2]: OK');
+      debug('TPAP discover fallback pake:[2]: OK');
       return { ...this.protocol };
     }
     const pake = tpap.pake.map(Number);
@@ -200,7 +201,7 @@ export class TpapClient {
       this.port = this.protocol.port;
       this.baseUrl = this.port === 80 ? `http://${this.ip}` : `http://${this.ip}:${this.port}`;
     }
-    console.log('TPAP discover: OK');
+    debug('TPAP discover: OK');
     return { ...this.protocol };
   }
 
@@ -211,9 +212,9 @@ export class TpapClient {
     for (const secret of candidateSecrets(this.password, protocol.pake)) {
       try {
         await this.authenticateCandidate(protocol, secret, (phase) => { failedPhase = phase; });
-        console.log('TPAP pake_register: OK');
-        console.log('TPAP pake_share: OK');
-        console.log('TPAP sessione stabilita: OK');
+        debug('TPAP pake_register: OK');
+        debug('TPAP pake_share: OK');
+        debug('TPAP sessione stabilita: OK');
         return;
       } catch (error) {
         lastError = error;
@@ -221,16 +222,16 @@ export class TpapClient {
           const first = this.discoverHttpResponse;
           const second = error.tpapHttpResponse;
           if (first?.bodySha256 && second.bodySha256) {
-            console.log(`TPAP HTML SHA-256 discover=${first.bodySha256}`);
-            console.log(`TPAP HTML SHA-256 pake_register=${second.bodySha256}`);
-            console.log(`TPAP HTML byte-per-byte: ${first.bodySha256 === second.bodySha256 ? 'IDENTICI' : 'DIVERSI'}`);
-            console.log(`TPAP HTML significato probabile: ${second.safeSummary}`);
+            debug(`TPAP HTML SHA-256 discover=${first.bodySha256}`);
+            debug(`TPAP HTML SHA-256 pake_register=${second.bodySha256}`);
+            debug(`TPAP HTML byte-per-byte: ${first.bodySha256 === second.bodySha256 ? 'IDENTICI' : 'DIVERSI'}`);
+            debug(`TPAP HTML significato probabile: ${second.safeSummary}`);
           }
           break;
         }
       }
     }
-    console.log(`TPAP ${failedPhase}: FALLITA (${lastError?.message || 'nessun dettaglio disponibile'})`);
+    debug(`TPAP ${failedPhase}: FALLITA (${lastError?.message || 'nessun dettaglio disponibile'})`);
     throw new Error(`Autenticazione TPAP non riuscita: ${lastError?.message || 'nessun dettaglio disponibile'}`);
   }
 
@@ -301,10 +302,10 @@ export class TpapClient {
       let body;
       try { body = JSON.parse(decrypted); } catch { throw new Error('risposta decifrata non valida'); }
       if (body.error_code !== 0) throw new Error(`error_code=${body.error_code}`);
-      console.log('TPAP get_device_info: OK');
+      debug('TPAP get_device_info: OK');
       return body.result || {};
     } catch (error) {
-      console.log(`TPAP get_device_info: FALLITA (${error.message})`);
+      debug(`TPAP get_device_info: FALLITA (${error.message})`);
       throw new Error(`TPAP get_device_info: ${error.message}`);
     }
   }

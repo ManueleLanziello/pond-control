@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1115">
+  <title>Pond Control</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <p class="eyebrow">LOCAL MONITOR</p>
+      <h1>Pond Control</h1>
+      <p class="subtitle">Monitoraggio impianto laghetto</p>
+    </header>
+
+    <section id="status-message" class="status-message" aria-live="polite">Caricamento dispositivi…</section>
+    <section id="devices" class="device-grid" aria-label="Dispositivi Tapo"></section>
+
+    <footer>
+      <span id="last-update">Ultimo aggiornamento: --:--:--</span>
+    </footer>
+  </main>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
