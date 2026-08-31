@@ -21,6 +21,12 @@ test('Pond card view uses external probe as primary and keeps secondary Dewin re
   assert.equal(view.optional.length, 1);
 });
 
+test('Pond card view exposes cached Dewin online and offline connection state', () => {
+  assert.equal(dewinCardView({ available: true, online: true }).online, true);
+  assert.equal(dewinCardView({ available: true, online: false }).online, false);
+  assert.equal(dewinCardView(null).online, false);
+});
+
 test('Pond card source reads /api/dewin and never calls Tuya or a write endpoint', async () => {
   const source = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
   const card = source.slice(source.indexOf('function pondTemperatureCard'), source.indexOf('function functionCard'));

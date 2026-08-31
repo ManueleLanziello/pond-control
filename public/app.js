@@ -174,6 +174,7 @@ function pondTemperatureCard(dewin) {
   const details = document.createElement('div');
   details.className = 'details dewin-details';
   details.append(
+    valueRow('/icons/wifi.svg', 'Connessione', view.online ? 'ONLINE' : 'OFFLINE', '', view.online ? 'online-text' : 'offline-text'),
     valueRow('/icons/termos.svg', 'Ambiente', view.ambientTemperature),
     valueRow('/icons/umidity.svg', 'Umidità', view.ambientHumidity),
     valueRow('/icons/battery.svg', 'Batteria', view.battery),

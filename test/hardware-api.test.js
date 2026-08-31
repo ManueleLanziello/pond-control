@@ -92,6 +92,33 @@ test('hardware API represents configured Dewin role and current DewinService sta
   }, { dewinConfigured: true, dewinSnapshot: { available: true, online: true } });
 });
 
+test('hardware API derives verified for a complete legacy Dewin from its cached snapshot without persisting', async () => {
+  await withHardwareApi(async ({ baseUrl, hardwareStore, dewinService }) => {
+    await hardwareStore.update('sensors', 'dewin-pond', { provider: 'Tuya Cloud legacy' });
+    await hardwareStore.update('sensors', 'dewin-pond', { provider: 'Tuya Cloud' });
+    assert.equal((await hardwareStore.read()).sensors[0].verificationStatus, 'pending');
+
+    const payload = await (await fetch(`${baseUrl}/api/hardware`)).json();
+    assert.equal(payload.sensors[0].verificationStatus, 'verified');
+    assert.equal(payload.sensors[0].online, true);
+    assert.equal(dewinService.snapshotCalls, 1);
+    assert.equal((await hardwareStore.read()).sensors[0].verificationStatus, 'pending');
+  }, {
+    dewinConfigured: true,
+    dewinSnapshot: { available: true, online: true, updatedAt: '2026-08-31T12:00:00.000Z' },
+  });
+});
+
+test('hardware API does not arbitrarily verify legacy Dewin without a usable cached snapshot', async () => {
+  await withHardwareApi(async ({ baseUrl, hardwareStore }) => {
+    await hardwareStore.update('sensors', 'dewin-pond', { provider: 'Tuya Cloud legacy' });
+    await hardwareStore.update('sensors', 'dewin-pond', { provider: 'Tuya Cloud' });
+    const payload = await (await fetch(`${baseUrl}/api/hardware`)).json();
+    assert.equal(payload.sensors[0].configurationStatus, 'complete');
+    assert.equal(payload.sensors[0].verificationStatus, 'pending');
+  }, { dewinConfigured: true, dewinSnapshot: { available: false, online: false } });
+});
+
 test('Dewin alias and role edits stay verified and manual verification reuses one cached snapshot', async () => {
   await withHardwareApi(async ({ baseUrl, hardwareStore, dewinService }) => {
     for (const change of [{ alias: 'Dewin rinominato' }, { role: 'external_temperature' }]) {

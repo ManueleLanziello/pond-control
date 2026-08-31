@@ -119,10 +119,15 @@ test('dashboard renders the five compact cards in the required order', async () 
   assert.match(appSource, /forecastIconData = weatherIconForCode\(day\.weatherCode\)/);
   assert.doesNotMatch(appSource, /https?:\/\//);
   assert.match(temperatureSource, /\/icons\/thermometer\.svg/);
+  assert.match(temperatureSource, /valueRow\('\/icons\/wifi\.svg', 'Connessione', view\.online \? 'ONLINE' : 'OFFLINE'/);
   assert.match(temperatureSource, /valueRow\('\/icons\/termos\.svg', 'Ambiente'/);
   assert.match(temperatureSource, /valueRow\('\/icons\/umidity\.svg', 'Umidità'/);
   assert.match(temperatureSource, /valueRow\('\/icons\/battery\.svg', 'Batteria'/);
   assert.match(temperatureSource, /valueRow\('\/icons\/update\.svg', 'Aggiornato'/);
+  assert.ok(temperatureSource.indexOf("'Connessione'") < temperatureSource.indexOf("'Ambiente'"));
+  assert.ok(temperatureSource.indexOf("'Ambiente'") < temperatureSource.indexOf("'Umidità'"));
+  assert.ok(temperatureSource.indexOf("'Umidità'") < temperatureSource.indexOf("'Batteria'"));
+  assert.ok(temperatureSource.indexOf("'Batteria'") < temperatureSource.indexOf("'Aggiornato'"));
   assert.match(temperatureSource, /view\.pondTemperature/);
   assert.match(appSource, /fetch\('\/api\/dewin'/);
   assert.match(appSource, /fetch\('\/api\/hardware'/);

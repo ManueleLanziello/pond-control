@@ -344,11 +344,19 @@ export function createPondServer({
             rssi: livePlugs.get(plug.id)?.rssi ?? null,
             state: livePlugs.get(plug.id)?.state ?? null,
           })),
-          sensors: registry.sensors.map((sensor) => ({
-            ...sensor,
-            online: sensor.id === 'dewin-pond' ? Boolean(dewin.available && dewin.online) : false,
-            rssi: null,
-          })),
+          sensors: registry.sensors.map((sensor) => {
+            const isUsableDewin = sensor.id === 'dewin-pond'
+              && sensor.connectionType === 'cloud'
+              && sensor.protocol === 'tuya-cloud'
+              && sensor.configurationStatus === 'complete'
+              && Boolean(dewin.available);
+            return {
+              ...sensor,
+              verificationStatus: isUsableDewin ? 'verified' : sensor.verificationStatus,
+              online: sensor.id === 'dewin-pond' ? Boolean(dewin.available && dewin.online) : false,
+              rssi: null,
+            };
+          }),
           cameras: registry.cameras.map((camera) => ({
             ...camera, online: camera.verificationStatus === 'verified', rssi: null,
           })),
