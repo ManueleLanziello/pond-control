@@ -12,7 +12,7 @@ const EMPTY_LABELS = Object.freeze({ plugs: 'Nessuna presa configurata', sensors
 const KIND_LABELS = Object.freeze({ plugs: 'PRESA', sensors: 'SENSORE', cameras: 'TELECAMERA' });
 const ROLE_LABELS = Object.freeze({
   none: 'Nessun ruolo', pump: 'Pompa Filtro', heater: 'Riscaldatore',
-  pond_temperature: 'Temperatura Pond', external_temperature: 'Temperatura Esterna', pond_camera: 'Telecamera Pond',
+  pond_temperature: 'Temperatura Acqua', pond_camera: 'Telecamera Pond',
 });
 const PROTOCOLS = Object.freeze({ plugs: 'tpap', sensors: 'none', cameras: 'pytapo-https' });
 let hardware = { plugs: [], sensors: [], cameras: [], roles: {} };
@@ -90,11 +90,11 @@ function hardwareCard(kind, device) {
     textRow('Configurazione', device.configurationStatus === 'complete' ? 'COMPLETA' : 'INCOMPLETA'),
     ...(kind === 'plugs' ? [textRow('Runtime', device.runtimeSupported ? 'OPERATIVA' : 'NON ATTIVA')] : []));
   const actions = document.createElement('div'); actions.className = 'settings-card-actions';
-  actions.append(
-    actionButton('Modifica', () => openForm(kind, device)),
-    actionButton('Verifica', () => verifySaved(kind, device)),
-    actionButton('Rimuovi', () => removeDevice(kind, device), 'is-danger'),
-  );
+  actions.append(actionButton('Modifica', () => openForm(kind, device)));
+  if (!(kind === 'sensors' && device.connectionType === 'cloud')) {
+    actions.append(actionButton('Verifica', () => verifySaved(kind, device)));
+  }
+  actions.append(actionButton('Rimuovi', () => removeDevice(kind, device), 'is-danger'));
   card.append(heading, role, details, actions);
   return card;
 }
@@ -139,6 +139,7 @@ function updateConnectionFields() {
   document.querySelector('#hardware-mac-field').hidden = cloud;
   document.querySelector('#hardware-ip').required = !cloud;
   document.querySelector('#hardware-mac').required = !cloud && kind !== 'cameras';
+  document.querySelector('#hardware-verify').hidden = cloud;
 }
 
 function openForm(kind, device = null) {
@@ -156,7 +157,7 @@ function openForm(kind, device = null) {
   role.replaceChildren(roleOptions(kind, device?.role || 'none', { runtimeSupported: Boolean(device?.runtimeSupported) }));
   formStatus.className = 'status-message';
   formStatus.textContent = kind === 'sensors'
-    ? 'La verifica sensori sarà disponibile con il primo protocollo supportato.'
+    ? (device?.connectionType === 'cloud' ? 'La configurazione cloud usa lo stato già disponibile del servizio.' : 'La verifica LAN sarà disponibile con il primo protocollo supportato.')
     : kind === 'plugs' && !device?.runtimeSupported
       ? 'La presa può essere registrata e verificata, ma non può ricevere un ruolo operativo finché non è supportata dal runtime.'
       : '';
@@ -165,7 +166,7 @@ function openForm(kind, device = null) {
 
 async function verifyForm() {
   const kind = document.querySelector('#hardware-kind').value;
-  if (kind === 'sensors') { formStatus.textContent = 'Verifica sensori non ancora disponibile.'; return; }
+  if (kind === 'sensors') return;
   formStatus.textContent = 'Verifica read-only in corso…';
   try {
     const result = await request(`/api/hardware/${kind}/verify`, {

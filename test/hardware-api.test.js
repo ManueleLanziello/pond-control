@@ -19,13 +19,18 @@ async function withHardwareApi(callback, { dewinConfigured = false, dewinSnapsho
     read: async () => ({ ...assignments }),
     assign: async (id, role) => {
       if (role !== 'none') {
-        for (const deviceId of Object.keys(assignments)) if (assignments[deviceId] === role) assignments[deviceId] = 'none';
+        const previousRole = assignments[id];
+        for (const deviceId of Object.keys(assignments)) {
+          if (deviceId !== id && assignments[deviceId] === role) assignments[deviceId] = previousRole;
+        }
       }
       assignments[id] = role;
       return { ...assignments };
     },
   };
   const verificationCalls = [];
+  const controlWrites = [];
+  const states = { 'tapo-p105-pond': 'ON', 'tapo-p100m-pond': 'OFF' };
   const verifyPlug = async (configured) => {
     verificationCalls.push({ kind: 'plug', configured });
     return { model: configured.model, alias: configured.alias, mac: configured.mac, protocol: 'TPAP/SPAKE2+', online: true, rssi: -51 };
@@ -34,10 +39,23 @@ async function withHardwareApi(callback, { dewinConfigured = false, dewinSnapsho
     verificationCalls.push({ kind: 'camera', configured });
     return { model: configured.model, alias: configured.alias, mac: configured.mac, protocol: 'PyTapo HTTPS', online: true };
   };
-  const deviceManager = { snapshots: () => devices.map((device) => ({
-    id: device.id, name: device.fallbackName, model: device.model, ip: device.ip,
-    protocol: device.protocolLabel, online: true, state: 'OFF', rssi: -55,
-  })) };
+  const deviceManager = {
+    snapshots: () => devices.map((device) => ({
+      id: device.id, name: device.fallbackName, model: device.model, ip: device.ip,
+      protocol: device.protocolLabel, online: true, state: states[device.id], rssi: -55,
+      communicationDegraded: false, consecutiveFailures: 0, lastReadAt: new Date().toISOString(),
+    })),
+    withDevices: async (_ids, operation) => operation({
+      read: async () => {},
+      snapshot: (id) => ({ state: states[id], online: true }),
+      isFreshAndReliable: () => true,
+      setDeviceOn: async (id, value) => {
+        states[id] = value ? 'ON' : 'OFF';
+        controlWrites.push([id, value]);
+        return { state: states[id] };
+      },
+    }),
+  };
   const dewinService = {
     snapshot: () => {
       dewinService.snapshotCalls += 1;
@@ -51,7 +69,7 @@ async function withHardwareApi(callback, { dewinConfigured = false, dewinSnapsho
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
-  try { await callback({ baseUrl, hardwareStore, assignments, verificationCalls, dewinService }); }
+  try { await callback({ baseUrl, hardwareStore, assignments, verificationCalls, dewinService, controlWrites, states }); }
   finally {
     await new Promise((resolve) => server.close(resolve));
     await rm(directory, { recursive: true, force: true });
@@ -68,7 +86,7 @@ test('first hardware API read bootstraps the missing file and preserves runtime 
     const { response, payload } = await jsonRequest(baseUrl, '/api/hardware');
     assert.equal(response.status, 200);
     assert.deepEqual(payload.plugs.map(({ id, role, online, state, rssi }) => ({ id, role, online, state, rssi })), [
-      { id: 'tapo-p105-pond', role: 'pump', online: true, state: 'OFF', rssi: -55 },
+      { id: 'tapo-p105-pond', role: 'pump', online: true, state: 'ON', rssi: -55 },
       { id: 'tapo-p100m-pond', role: 'heater', online: true, state: 'OFF', rssi: -55 },
     ]);
     assert.equal(payload.cameras[0].alias, 'C410 Pond');
@@ -76,7 +94,7 @@ test('first hardware API read bootstraps the missing file and preserves runtime 
     assert.ok(payload.plugs.every((plug) => plug.runtimeSupported === true));
     assert.deepEqual(assignments, { 'tapo-p105-pond': 'pump', 'tapo-p100m-pond': 'heater' });
     assert.deepEqual((await hardwareStore.read()).plugs.map((plug) => plug.id), devices.map((device) => device.id));
-    assert.deepEqual(payload.roles.sensors, ['none', 'pond_temperature', 'external_temperature']);
+    assert.deepEqual(payload.roles.sensors, ['none', 'pond_temperature']);
     assert.deepEqual(payload.roles.cameras, ['none', 'pond_camera']);
   });
 });
@@ -92,7 +110,7 @@ test('hardware API represents configured Dewin role and current DewinService sta
   }, { dewinConfigured: true, dewinSnapshot: { available: true, online: true } });
 });
 
-test('hardware API derives verified for a complete legacy Dewin from its cached snapshot without persisting', async () => {
+test('hardware API persistently repairs complete legacy Dewin from its cached snapshot', async () => {
   await withHardwareApi(async ({ baseUrl, hardwareStore, dewinService }) => {
     await hardwareStore.update('sensors', 'dewin-pond', { provider: 'Tuya Cloud legacy' });
     await hardwareStore.update('sensors', 'dewin-pond', { provider: 'Tuya Cloud' });
@@ -102,7 +120,7 @@ test('hardware API derives verified for a complete legacy Dewin from its cached 
     assert.equal(payload.sensors[0].verificationStatus, 'verified');
     assert.equal(payload.sensors[0].online, true);
     assert.equal(dewinService.snapshotCalls, 1);
-    assert.equal((await hardwareStore.read()).sensors[0].verificationStatus, 'pending');
+    assert.equal((await hardwareStore.read()).sensors[0].verificationStatus, 'verified');
   }, {
     dewinConfigured: true,
     dewinSnapshot: { available: true, online: true, updatedAt: '2026-08-31T12:00:00.000Z' },
@@ -121,7 +139,7 @@ test('hardware API does not arbitrarily verify legacy Dewin without a usable cac
 
 test('Dewin alias and role edits stay verified and manual verification reuses one cached snapshot', async () => {
   await withHardwareApi(async ({ baseUrl, hardwareStore, dewinService }) => {
-    for (const change of [{ alias: 'Dewin rinominato' }, { role: 'external_temperature' }]) {
+    for (const change of [{ alias: 'Dewin rinominato' }, { role: 'none' }, { role: 'pond_temperature' }]) {
       const updated = await jsonRequest(baseUrl, '/api/hardware/sensors/dewin-pond', {
         method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(change),
       });
@@ -174,7 +192,46 @@ test('plug role transfer is delegated to the existing runtime role store', async
     });
     assert.equal(response.status, 200);
     assert.equal(assignments['tapo-p100m-pond'], 'pump');
-    assert.equal(assignments['tapo-p105-pond'], 'none');
+    assert.equal(assignments['tapo-p105-pond'], 'heater');
+  });
+});
+
+test('Settings role swap keeps dashboard identity and role commands on the same physical devices', async () => {
+  await withHardwareApi(async ({ baseUrl, assignments, controlWrites }) => {
+    const initial = await (await fetch(`${baseUrl}/api/devices`)).json();
+    assert.deepEqual(initial.devices.map(({ id, role, model, state }) => ({ id, role, model, state })), [
+      { id: 'tapo-p105-pond', role: 'pump', model: 'P105', state: 'ON' },
+      { id: 'tapo-p100m-pond', role: 'heater', model: 'P100M', state: 'OFF' },
+    ]);
+    await fetch(`${baseUrl}/api/functions/pump/state`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ state: 'ON' }),
+    });
+    await fetch(`${baseUrl}/api/functions/heater/state`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ state: 'OFF' }),
+    });
+    assert.deepEqual(controlWrites.splice(0), [
+      ['tapo-p105-pond', true], ['tapo-p100m-pond', false],
+    ]);
+
+    const swapped = await jsonRequest(baseUrl, '/api/hardware/plugs/tapo-p100m-pond', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role: 'pump' }),
+    });
+    assert.equal(swapped.response.status, 200);
+    assert.deepEqual(assignments, { 'tapo-p105-pond': 'heater', 'tapo-p100m-pond': 'pump' });
+    const dashboard = await (await fetch(`${baseUrl}/api/devices`)).json();
+    assert.deepEqual(dashboard.devices.map(({ id, role, model, name }) => ({ id, role, model, name })), [
+      { id: 'tapo-p105-pond', role: 'heater', model: 'P105', name: 'Presa Tapo P105' },
+      { id: 'tapo-p100m-pond', role: 'pump', model: 'P100M', name: 'Presa Tapo P100M' },
+    ]);
+    await fetch(`${baseUrl}/api/functions/pump/state`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ state: 'ON' }),
+    });
+    await fetch(`${baseUrl}/api/functions/heater/state`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ state: 'OFF' }),
+    });
+    assert.deepEqual(controlWrites, [
+      ['tapo-p100m-pond', true], ['tapo-p105-pond', false],
+    ]);
   });
 });
 

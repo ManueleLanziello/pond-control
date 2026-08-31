@@ -134,7 +134,7 @@ test('administrative cloud edits preserve verification while technical cloud and
   });
   try {
     assert.equal((await store.update('sensors', 'dewin-pond', { alias: 'Nuovo alias' })).verificationStatus, 'verified');
-    assert.equal((await store.update('sensors', 'dewin-pond', { role: 'external_temperature' })).verificationStatus, 'verified');
+    assert.equal((await store.update('sensors', 'dewin-pond', { role: 'none' })).verificationStatus, 'verified');
     assert.equal((await store.update('sensors', 'dewin-pond', { provider: 'Altro provider' })).verificationStatus, 'pending');
     const lan = await store.create('sensors', {
       alias: 'Sonda LAN', type: 'Temperatura', ip: '192.168.1.40', mac: 'AA:BB:CC:DD:EE:40',

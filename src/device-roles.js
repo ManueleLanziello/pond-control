@@ -47,8 +47,11 @@ export class DeviceRoleStore {
     const operation = this.writeQueue.then(async () => {
       const assignments = await this.read();
       if (role !== 'none') {
+        const previousRole = assignments[deviceId];
         for (const id of this.deviceIds) {
-          if (id !== deviceId && assignments[id] === role) assignments[id] = 'none';
+          if (id !== deviceId && assignments[id] === role) {
+            assignments[id] = previousRole !== 'none' ? previousRole : 'none';
+          }
         }
       }
       assignments[deviceId] = role;

@@ -62,15 +62,19 @@ test('role assignments persist and transfer an occupied role to the selected dev
   });
 });
 
-test('pump and heater remain unique during reassignment', async () => {
-  await withRoleStore(async ({ store }) => {
+test('assigning an occupied operational role atomically swaps and persists pump and heater', async () => {
+  await withRoleStore(async ({ store, filePath }) => {
     await store.assign('tapo-p100m-pond', 'pump');
     assert.deepEqual(await store.assign('tapo-p105-pond', 'heater'), {
       'tapo-p105-pond': 'heater',
       'tapo-p100m-pond': 'pump',
     });
     assert.deepEqual(await store.assign('tapo-p100m-pond', 'heater'), {
-      'tapo-p105-pond': 'none',
+      'tapo-p105-pond': 'pump',
+      'tapo-p100m-pond': 'heater',
+    });
+    assert.deepEqual(JSON.parse(await readFile(filePath, 'utf8')).assignments, {
+      'tapo-p105-pond': 'pump',
       'tapo-p100m-pond': 'heater',
     });
   });

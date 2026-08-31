@@ -335,6 +335,20 @@ export function createPondServer({
         const [registry, assignments] = await Promise.all([hardwareStore.read(), roleStore.read()]);
         const livePlugs = new Map(deviceManager.snapshots().map((device) => [device.id, device]));
         const dewin = dewinService.snapshot();
+        for (const sensor of registry.sensors) {
+          const isUsableDewin = sensor.connectionType === 'cloud'
+            && sensor.protocol === 'tuya-cloud'
+            && sensor.role === 'pond_temperature'
+            && sensor.configurationStatus === 'complete'
+            && Boolean(dewin.available);
+          if (isUsableDewin && sensor.verificationStatus !== 'verified') {
+            Object.assign(sensor, await hardwareStore.markVerified('sensors', sensor.id, {
+              provider: sensor.provider || 'Tuya Cloud',
+              protocol: sensor.protocol,
+              snapshotUpdatedAt: dewin.updatedAt || null,
+            }));
+          }
+        }
         sendJson(response, 200, {
           plugs: registry.plugs.map((plug) => ({
             ...plug,
@@ -344,19 +358,12 @@ export function createPondServer({
             rssi: livePlugs.get(plug.id)?.rssi ?? null,
             state: livePlugs.get(plug.id)?.state ?? null,
           })),
-          sensors: registry.sensors.map((sensor) => {
-            const isUsableDewin = sensor.id === 'dewin-pond'
-              && sensor.connectionType === 'cloud'
-              && sensor.protocol === 'tuya-cloud'
-              && sensor.configurationStatus === 'complete'
-              && Boolean(dewin.available);
-            return {
-              ...sensor,
-              verificationStatus: isUsableDewin ? 'verified' : sensor.verificationStatus,
-              online: sensor.id === 'dewin-pond' ? Boolean(dewin.available && dewin.online) : false,
-              rssi: null,
-            };
-          }),
+          sensors: registry.sensors.map((sensor) => ({
+            ...sensor,
+            online: sensor.protocol === 'tuya-cloud' && sensor.role === 'pond_temperature'
+              ? Boolean(dewin.available && dewin.online) : false,
+            rssi: null,
+          })),
           cameras: registry.cameras.map((camera) => ({
             ...camera, online: camera.verificationStatus === 'verified', rssi: null,
           })),
@@ -413,7 +420,7 @@ export function createPondServer({
             let detected;
             if (kind === 'sensors') {
               if (configured.connectionType !== 'cloud' || configured.protocol !== 'tuya-cloud' || id !== 'dewin-pond') {
-                throw new HardwareRegistryError('Verifica sensore non ancora disponibile.', 'NOT_IMPLEMENTED');
+                throw new HardwareRegistryError('Verifica sensore LAN non ancora disponibile.', 'NOT_IMPLEMENTED');
               }
               const snapshot = dewinService.snapshot();
               if (!snapshot?.available) {

@@ -4,7 +4,7 @@ import net from 'node:net';
 import path from 'node:path';
 
 export const HARDWARE_KINDS = Object.freeze(['plugs', 'sensors', 'cameras']);
-export const SENSOR_ROLES = Object.freeze(['none', 'pond_temperature', 'external_temperature']);
+export const SENSOR_ROLES = Object.freeze(['none', 'pond_temperature']);
 export const CAMERA_ROLES = Object.freeze(['none', 'pond_camera']);
 const HARDWARE_REGISTRY_VERSION = 2;
 const MAC_PATTERN = /^(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}$/i;

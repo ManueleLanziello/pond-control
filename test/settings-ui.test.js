@@ -25,8 +25,8 @@ test('settings exposes only the currently supported role vocabulary', async () =
   assert.match(script, /pump: 'Pompa Filtro'/);
   assert.match(script, /heater: 'Riscaldatore'/);
   assert.match(script, /none: 'Nessun ruolo'/);
-  assert.match(script, /pond_temperature: 'Temperatura Pond'/);
-  assert.match(script, /external_temperature: 'Temperatura Esterna'/);
+  assert.match(script, /pond_temperature: 'Temperatura Acqua'/);
+  assert.doesNotMatch(script, /external_temperature|Temperatura Esterna/);
   assert.match(script, /pond_camera: 'Telecamera Pond'/);
   assert.doesNotMatch(script, /water_level|humidity/);
   assert.match(style, /\.role-select\s*\{[\s\S]*?min-height:\s*48px/);
@@ -50,7 +50,7 @@ test('settings requires read-only verification before adding a supported active 
   const script = await readFile(new URL('../public/settings.js', import.meta.url), 'utf8');
   assert.match(script, /saveButton\.disabled = adding && kind !== 'sensors'/);
   assert.match(script, /if \(adding && kind !== 'sensors' && !formVerified\) return/);
-  assert.match(script, /Verifica sensori non ancora disponibile/);
+  assert.doesNotMatch(script, /Verifica sensori? non ancora disponibile/);
   assert.doesNotMatch(script, /\/api\/(?:devices|functions)\/[^'`]*\/(?:on|off|toggle)/i);
 });
 
@@ -66,6 +66,7 @@ test('cloud sensor cards show provider and cloud status without IP or MAC rows',
   const card = script.slice(script.indexOf('function hardwareCard'), script.indexOf('function renderKind'));
   assert.match(card, /`\$\{device\.type\}\$\{device\.provider \? ` · \$\{device\.provider\}` : ''\}`/);
   assert.match(card, /kind === 'sensors' && device\.connectionType === 'cloud'/);
+  assert.match(card, /if \(!\(kind === 'sensors' && device\.connectionType === 'cloud'\)\)/);
   assert.match(card, /textRow\('Connessione', 'CLOUD'\)/);
   assert.match(card, /\? \[textRow\('Connessione', 'CLOUD'\), statusRow\]\s*: \[/);
 });
@@ -76,9 +77,10 @@ test('camera form requires IP but permits an initially empty MAC', async () => {
   assert.match(script, /hardware-mac'\)\.required = !cloud && kind !== 'cameras'/);
 });
 
-test('sensor form preserves its technical protocol and allows cached cloud verification', async () => {
+test('sensor form preserves its protocol and hides redundant cloud verification', async () => {
   const script = await readFile(new URL('../public/settings.js', import.meta.url), 'utf8');
   assert.match(script, /editingDevice\?\.protocol \|\| provider \|\| 'none'/);
+  assert.match(script, /hardware-verify'\)\.hidden = cloud/);
   assert.match(script, /kind === 'sensors' && device\.connectionType !== 'cloud'/);
   assert.doesNotMatch(script, /if \(kind === 'sensors'\) throw new Error\('Verifica sensori non ancora disponibile/);
 });
