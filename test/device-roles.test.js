@@ -48,8 +48,8 @@ test('stable device ids do not depend on role or nickname', () => {
 test('role assignments persist and transfer an occupied role to the selected device', async () => {
   await withRoleStore(async ({ store, filePath }) => {
     assert.deepEqual(await store.read(), {
-      'tapo-p105-pond': 'pump',
-      'tapo-p100m-pond': 'heater',
+      'tapo-p105-pond': 'none',
+      'tapo-p100m-pond': 'none',
     });
     const assignments = await store.assign('tapo-p100m-pond', 'pump');
     assert.deepEqual(assignments, {
@@ -91,8 +91,8 @@ test('role API writes only local configuration and never reads or writes a Tapo 
       assert.deepEqual(await configuration.json(), {
         validRoles: ['pump', 'heater', 'none'],
         assignments: {
-          'tapo-p105-pond': 'pump',
-          'tapo-p100m-pond': 'heater',
+          'tapo-p105-pond': 'none',
+          'tapo-p100m-pond': 'none',
         },
       });
       assert.equal(tapoReads(), 0);

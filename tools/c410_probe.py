@@ -15,7 +15,7 @@ from pathlib import Path
 from pytapo import Tapo
 
 
-CAMERA_IP = os.environ.get("TAPO_CAMERA_IP", "192.168.1.8")
+CAMERA_IP = os.environ.get("TAPO_CAMERA_IP", "192.168.1.11")
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SAFE_INFO_KEYS = {
     "alias",

@@ -1,8 +1,7 @@
 export const devices = Object.freeze([
   Object.freeze({
     id: 'tapo-p105-pond',
-    role: 'pump',
-    fallbackName: 'Pompa Filtro Pond',
+    fallbackName: 'Presa Tapo P105',
     model: 'P105',
     ip: '192.168.1.5',
     type: 'SMART.TAPOPLUG',
@@ -11,10 +10,9 @@ export const devices = Object.freeze([
   }),
   Object.freeze({
     id: 'tapo-p100m-pond',
-    role: 'heater',
-    fallbackName: 'Riscaldatore Pond',
+    fallbackName: 'Presa Tapo P100M',
     model: 'P100M',
-    ip: '192.168.1.20',
+    ip: '192.168.1.4',
     type: 'SMART.TAPOPLUG',
     protocol: 'tpap',
     protocolLabel: 'TPAP/SPAKE2+',

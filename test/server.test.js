@@ -4,9 +4,13 @@ import { devices } from '../devices.js';
 import { createDeviceStatusLogger, createPondServer } from '../server.js';
 
 const DEVICE_ID_FOR_TEST = 'bf0a19b9163f00415ba1o9';
+const DEFAULT_ASSIGNMENTS = {
+  'tapo-p105-pond': 'pump',
+  'tapo-p100m-pond': 'heater',
+};
 
 async function withServer(readDevice, callback, options = {}) {
-  const defaultAssignments = Object.fromEntries(devices.map((device) => [device.id, device.role]));
+  const defaultAssignments = { ...DEFAULT_ASSIGNMENTS };
   const snapshots = options.deviceManager ? null : await Promise.all(devices.map(async (device) => {
     try {
       const deviceInfo = await readDevice(device);
@@ -53,8 +57,8 @@ function fixture(device) {
     model: device.model,
     nickname: Buffer.from(`${device.fallbackName} da Tapo`).toString('base64'),
     type: 'SMART.TAPOPLUG',
-    device_on: device.role === 'pump',
-    rssi: device.role === 'pump' ? -55 : -68,
+    device_on: device.id === 'tapo-p105-pond',
+    rssi: device.id === 'tapo-p105-pond' ? -55 : -68,
   };
 }
 
@@ -67,13 +71,41 @@ test('GET /api/devices returns both configured devices and no credentials', asyn
     assert.equal(payload.devices.length, 2);
     assert.deepEqual(payload.devices.map((device) => device.id), ['tapo-p105-pond', 'tapo-p100m-pond']);
     assert.deepEqual(payload.devices.map((device) => device.role), ['pump', 'heater']);
-    assert.deepEqual(payload.devices.map((device) => device.name), ['Pompa Filtro Pond da Tapo', 'Riscaldatore Pond da Tapo']);
+    assert.deepEqual(payload.devices.map((device) => device.name), ['Presa Tapo P105 da Tapo', 'Presa Tapo P100M da Tapo']);
     assert.ok(payload.devices.every((device) => !Object.hasOwn(device, 'alias')));
     assert.deepEqual(payload.devices.map((device) => device.protocol), ['TPAP/SPAKE2+', 'TPAP/SPAKE2+']);
     assert.ok(payload.devices.every((device) => device.online === true));
     assert.ok(payload.devices.every((device) => device.lastReadAt === '2026-08-25T12:34:56.000Z'));
     assert.doesNotMatch(raw, /TAPO_USERNAME|TAPO_PASSWORD|username|password|token|cookie|stok|sessionId/i);
   });
+});
+
+test('GET /api/devices keeps physical data attached to device identity when roles are swapped', async () => {
+  const swappedAssignments = {
+    'tapo-p105-pond': 'heater',
+    'tapo-p100m-pond': 'pump',
+  };
+  await withServer(async (device) => ({
+    model: device.model,
+    nickname: Buffer.from(`Alias ${device.model}`).toString('base64'),
+    type: device.type,
+    device_on: device.id === 'tapo-p100m-pond',
+    rssi: device.id === 'tapo-p100m-pond' ? -44 : -77,
+  }), async (baseUrl) => {
+    const payload = await (await fetch(`${baseUrl}/api/devices`)).json();
+    assert.deepEqual(payload.devices.map(({ id, role, model, name, ip, state, rssi }) => ({
+      id, role, model, name, ip, state, rssi,
+    })), [
+      {
+        id: 'tapo-p105-pond', role: 'heater', model: 'P105', name: 'Alias P105',
+        ip: '192.168.1.5', state: 'OFF', rssi: -77,
+      },
+      {
+        id: 'tapo-p100m-pond', role: 'pump', model: 'P100M', name: 'Alias P100M',
+        ip: '192.168.1.4', state: 'ON', rssi: -44,
+      },
+    ]);
+  }, { roleStore: { read: async () => ({ ...swappedAssignments }) } });
 });
 
 test('device status logger reports initial states and transitions only', () => {
@@ -96,7 +128,7 @@ test('GET /api/devices uses the configured fallback when nickname is unavailable
   await withServer(async (device) => ({ ...fixture(device), nickname: '' }), async (baseUrl) => {
     const response = await fetch(`${baseUrl}/api/devices`);
     const payload = await response.json();
-    assert.deepEqual(payload.devices.map((device) => device.name), ['Pompa Filtro Pond', 'Riscaldatore Pond']);
+    assert.deepEqual(payload.devices.map((device) => device.name), ['Presa Tapo P105', 'Presa Tapo P100M']);
     assert.deepEqual(payload.devices.map((device) => device.role), ['pump', 'heater']);
   });
 });
@@ -117,7 +149,7 @@ test('a Tapo rename changes name but never id or role', async () => {
 
 test('GET /api/devices isolates an offline device', async () => {
   await withServer(async (device) => {
-    if (device.role === 'heater') throw new Error('simulated sensitive transport failure');
+    if (device.id === 'tapo-p100m-pond') throw new Error('simulated sensitive transport failure');
     return fixture(device);
   }, async (baseUrl) => {
     const response = await fetch(`${baseUrl}/api/devices`);
@@ -430,17 +462,18 @@ test('GET /api/dewin/history supports an explicit date and defaults through Euro
   assert.deepEqual(requestedDates, ['2026-08-26', undefined]);
 });
 
-test('dashboard configuration keeps stable ids and roles independent from Tapo names', () => {
-  assert.deepEqual(devices.map(({ id, role, fallbackName, model, ip, protocol }) => ({
-    id, role, fallbackName, model, ip, protocol,
+test('physical device configuration keeps stable ids and contains no logical roles', () => {
+  assert.deepEqual(devices.map(({ id, fallbackName, model, ip, protocol }) => ({
+    id, fallbackName, model, ip, protocol,
   })), [
     {
-      id: 'tapo-p105-pond', role: 'pump', fallbackName: 'Pompa Filtro Pond',
+      id: 'tapo-p105-pond', fallbackName: 'Presa Tapo P105',
       model: 'P105', ip: '192.168.1.5', protocol: 'tpap',
     },
     {
-      id: 'tapo-p100m-pond', role: 'heater', fallbackName: 'Riscaldatore Pond',
-      model: 'P100M', ip: '192.168.1.20', protocol: 'tpap',
+      id: 'tapo-p100m-pond', fallbackName: 'Presa Tapo P100M',
+      model: 'P100M', ip: '192.168.1.4', protocol: 'tpap',
     },
   ]);
+  assert.ok(devices.every((device) => !Object.hasOwn(device, 'role')));
 });

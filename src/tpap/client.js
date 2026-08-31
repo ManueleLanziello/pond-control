@@ -200,7 +200,7 @@ export class TpapClient {
       port: Number(tpap.port || this.port),
       tls: Boolean(tpap.tls),
     };
-    if (this.protocol.tls) throw new Error('Il dispositivo richiede TPAP su TLS, non previsto per questa P105 HTTP/80.');
+    if (this.protocol.tls) throw new Error('Il dispositivo richiede TPAP su TLS, non previsto dal client TPAP HTTP/80.');
     if (this.protocol.port !== this.port) {
       this.port = this.protocol.port;
       this.baseUrl = this.port === 80 ? `http://${this.ip}` : `http://${this.ip}:${this.port}`;
