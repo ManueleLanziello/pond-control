@@ -42,9 +42,11 @@ export function initCameraCard(container, fetchImpl = fetch) {
         : camera.status === 'NOT_CONFIGURED'
           ? 'NON CONFIGURATA'
           : camera.status === 'ERROR'
-            ? 'ERRORE'
+            ? `ERRORE${camera.errorCode ? ` · ${camera.errorCode}` : ''}`
             : 'AVVIO…';
-    updatedAt.textContent = `Ultima immagine: ${formatCameraTimestamp(camera.updatedAt)}`;
+    updatedAt.textContent = camera.status === 'ERROR' && camera.error
+      ? camera.error
+      : `Ultima immagine: ${formatCameraTimestamp(camera.updatedAt)}`;
     button.disabled = pending || !camera.configured;
     button.setAttribute('aria-pressed', String(live));
     buttonState.textContent = live ? 'ON' : 'OFF';

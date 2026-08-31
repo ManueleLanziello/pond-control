@@ -39,15 +39,19 @@ async function withHardwareApi(callback, { dewinConfigured = false, dewinSnapsho
     protocol: device.protocolLabel, online: true, state: 'OFF', rssi: -55,
   })) };
   const dewinService = {
-    snapshot: () => dewinSnapshot || ({ available: false, online: false }),
+    snapshot: () => {
+      dewinService.snapshotCalls += 1;
+      return dewinSnapshot || ({ available: false, online: false });
+    },
     history: async () => ({ samples: [] }), start: async () => {}, stop: () => {},
+    snapshotCalls: 0,
   };
   const server = createPondServer({
     hardwareStore, roleStore, deviceManager, verifyPlug, verifyCamera, dewinService, logDeviceStatus: () => {},
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
-  try { await callback({ baseUrl, hardwareStore, assignments, verificationCalls }); }
+  try { await callback({ baseUrl, hardwareStore, assignments, verificationCalls, dewinService }); }
   finally {
     await new Promise((resolve) => server.close(resolve));
     await rm(directory, { recursive: true, force: true });
@@ -86,6 +90,27 @@ test('hardware API represents configured Dewin role and current DewinService sta
       id: 'dewin-pond', role: 'pond_temperature', connectionType: 'cloud', online: true, configurationStatus: 'complete',
     }]);
   }, { dewinConfigured: true, dewinSnapshot: { available: true, online: true } });
+});
+
+test('Dewin alias and role edits stay verified and manual verification reuses one cached snapshot', async () => {
+  await withHardwareApi(async ({ baseUrl, hardwareStore, dewinService }) => {
+    for (const change of [{ alias: 'Dewin rinominato' }, { role: 'external_temperature' }]) {
+      const updated = await jsonRequest(baseUrl, '/api/hardware/sensors/dewin-pond', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(change),
+      });
+      assert.equal(updated.response.status, 200);
+      assert.equal(updated.payload.device.verificationStatus, 'verified');
+    }
+    assert.equal(dewinService.snapshotCalls, 0);
+    const verified = await jsonRequest(baseUrl, '/api/hardware/sensors/dewin-pond/verify', { method: 'POST' });
+    assert.equal(verified.response.status, 200);
+    assert.equal(verified.payload.device.verificationStatus, 'verified');
+    assert.equal(dewinService.snapshotCalls, 1);
+    assert.equal((await hardwareStore.read()).sensors[0].alias, 'Dewin rinominato');
+  }, {
+    dewinConfigured: true,
+    dewinSnapshot: { available: true, online: true, updatedAt: '2026-08-31T12:00:00.000Z' },
+  });
 });
 
 test('registry-only plug cannot take pump or heater from runtime devices', async () => {

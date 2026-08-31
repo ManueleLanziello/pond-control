@@ -399,11 +399,25 @@ export function createPondServer({
           if (!encodedId) throw new HardwareRegistryError('ID dispositivo mancante.', 'MISSING_ID');
           const id = decodeURIComponent(encodedId);
           if (action === 'verify' && request.method === 'POST') {
-            if (kind === 'sensors') throw new HardwareRegistryError('Verifica sensori non ancora disponibile.', 'NOT_IMPLEMENTED');
             const registry = await hardwareStore.read();
             const configured = registry[kind].find((record) => record.id === id);
             if (!configured) throw new HardwareRegistryError('Dispositivo non trovato.', 'NOT_FOUND');
-            const detected = await (kind === 'plugs' ? verifyPlug(configured) : verifyCamera(configured));
+            let detected;
+            if (kind === 'sensors') {
+              if (configured.connectionType !== 'cloud' || configured.protocol !== 'tuya-cloud' || id !== 'dewin-pond') {
+                throw new HardwareRegistryError('Verifica sensore non ancora disponibile.', 'NOT_IMPLEMENTED');
+              }
+              const snapshot = dewinService.snapshot();
+              if (!snapshot?.available) {
+                throw new HardwareRegistryError('Nessuno snapshot Dewin valido disponibile.', 'CLOUD_SNAPSHOT_UNAVAILABLE');
+              }
+              detected = {
+                provider: configured.provider || 'Tuya Cloud', protocol: configured.protocol,
+                snapshotUpdatedAt: snapshot.updatedAt || null,
+              };
+            } else {
+              detected = await (kind === 'plugs' ? verifyPlug(configured) : verifyCamera(configured));
+            }
             const device = await hardwareStore.markVerified(kind, id, detected);
             sendJson(response, 200, { verified: true, device, detected });
             return;
@@ -430,7 +444,10 @@ export function createPondServer({
           }
           sendJson(response, 405, { error: 'Metodo non consentito' });
         } catch (requestError) {
-          sendJson(response, requestError.code === 'NOT_IMPLEMENTED' ? 501 : 400, {
+          const status = requestError.code === 'NOT_IMPLEMENTED'
+            ? 501
+            : requestError.code === 'CLOUD_SNAPSHOT_UNAVAILABLE' ? 409 : 400;
+          sendJson(response, status, {
             code: requestError.code || 'INVALID_HARDWARE_REQUEST', error: requestError.message,
           });
         }

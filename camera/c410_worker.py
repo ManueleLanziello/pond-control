@@ -63,10 +63,21 @@ class JpegCollector:
                 continue
             self.latest = jpeg
             self.frames += 1
+            atomic_write(self.live_path, jpeg)
             if self.first_frame_at is None:
                 self.first_frame_at = time.perf_counter()
                 emit("ready")
-            atomic_write(self.live_path, jpeg)
+
+
+def classify_error(error: Exception) -> str:
+    message = str(error).lower()
+    if isinstance(error, FileNotFoundError) or "ffmpeg" in message and ("not found" in message or "no such file" in message):
+        return "FFMPEG_NOT_FOUND"
+    if isinstance(error, (TimeoutError, asyncio.TimeoutError)) or "timeout" in message or "timed out" in message:
+        return "TIMEOUT"
+    if "auth" in message or "login" in message or "credential" in message or "password" in message:
+        return "CAMERA_AUTH_FAILED"
+    return "STREAM_FAILED"
 
 
 def create_camera(ip: str, username: str, password: str) -> Tapo:
@@ -205,7 +216,7 @@ def main() -> int:
         emit("stopped", **result)
         return 0
     except Exception as error:
-        emit("error", message=redact(error, (username, password)))
+        emit("error", code=classify_error(error), message=redact(error, (username, password)))
         return 1
     finally:
         args.stop_file.unlink(missing_ok=True)

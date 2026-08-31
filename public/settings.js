@@ -18,6 +18,7 @@ const PROTOCOLS = Object.freeze({ plugs: 'tpap', sensors: 'none', cameras: 'pyta
 let hardware = { plugs: [], sensors: [], cameras: [], roles: {} };
 let adding = false;
 let formVerified = false;
+let editingDevice = null;
 
 function textRow(label, value, className = '') {
   const row = document.createElement('div');
@@ -124,7 +125,8 @@ function formPayload() {
     model: kind === 'sensors' ? '' : modelOrType, ...(kind === 'sensors' ? { type: modelOrType } : {}),
     ip: document.querySelector('#hardware-ip').value.trim(), mac: document.querySelector('#hardware-mac').value.trim(),
     connectionType, provider,
-    protocol: kind === 'sensors' ? provider || 'none' : PROTOCOLS[kind], role: document.querySelector('#hardware-role').value,
+    protocol: kind === 'sensors' ? editingDevice?.protocol || provider || 'none' : PROTOCOLS[kind],
+    role: document.querySelector('#hardware-role').value,
   };
 }
 
@@ -140,7 +142,7 @@ function updateConnectionFields() {
 }
 
 function openForm(kind, device = null) {
-  adding = !device; formVerified = false; form.reset();
+  adding = !device; editingDevice = device; formVerified = false; form.reset();
   document.querySelector('#hardware-kind').value = kind; document.querySelector('#hardware-id').value = device?.id || '';
   document.querySelector('#hardware-form-kind').textContent = KIND_LABELS[kind];
   document.querySelector('#hardware-form-title').textContent = device ? `Modifica ${device.alias}` : `Aggiungi ${KIND_LABELS[kind].toLowerCase()}`;
@@ -187,7 +189,9 @@ async function saveForm(event) {
 }
 
 async function verifySaved(kind, device) {
-  if (kind === 'sensors') throw new Error('Verifica sensori non ancora disponibile.');
+  if (kind === 'sensors' && device.connectionType !== 'cloud') {
+    throw new Error('Verifica sensore LAN non ancora disponibile.');
+  }
   await request(`/api/hardware/${kind}/${encodeURIComponent(device.id)}/verify`, { method: 'POST' });
   await loadHardware('Dispositivo verificato in sola lettura');
 }

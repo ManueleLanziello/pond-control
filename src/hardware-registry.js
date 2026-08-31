@@ -189,7 +189,7 @@ export class HardwareRegistryStore {
       const index = registry[kind].findIndex((record) => record.id === id);
       if (index < 0) throw new HardwareRegistryError('Dispositivo non trovato.', 'NOT_FOUND');
       const previous = registry[kind][index];
-      const physicalChanged = ['ip', 'mac', 'model', 'type', 'connectionType', 'protocol']
+      const physicalChanged = ['ip', 'mac', 'model', 'type', 'connectionType', 'protocol', 'provider']
         .some((field) => input[field] !== undefined && input[field] !== previous[field]);
       registry[kind][index] = normalizeRecord(kind, {
         ...previous, ...input, id,

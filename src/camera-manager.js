@@ -15,6 +15,24 @@ export class CameraControlError extends Error {
   }
 }
 
+function redactTechnicalMessage(value, env = process.env) {
+  let safe = String(value || '').trim();
+  for (const secret of [env.TAPO_USERNAME, env.TAPO_PASSWORD]) {
+    if (secret) safe = safe.replaceAll(secret, '[REDACTED]');
+  }
+  return safe.slice(0, 1200);
+}
+
+function diagnosticCode({ workerError, stderr = '', exitCode = null, frames = null }) {
+  const message = `${workerError?.message || ''}\n${stderr}`.toLowerCase();
+  if (workerError?.code === 'ENOENT') return 'PYTHON_NOT_FOUND';
+  if (message.includes('imageio_ffmpeg') || message.includes('ffmpeg')) return 'FFMPEG_NOT_FOUND';
+  if (message.includes('auth') || message.includes('login') || message.includes('credential')) return 'CAMERA_AUTH_FAILED';
+  if (message.includes('timeout') || message.includes('timed out')) return 'TIMEOUT';
+  if (frames === 0 || exitCode === 0) return 'FILE_NOT_CREATED';
+  return 'STREAM_FAILED';
+}
+
 export function defaultCameraPython(root, {
   env = process.env, platform = process.platform, pathExists = existsSync,
 } = {}) {
@@ -35,6 +53,7 @@ export class CameraManager {
     startTimeoutMs = 25_000,
     stopTimeoutMs = 8_000,
     spawnProcess = spawn,
+    env = process.env,
   }) {
     this.ip = ip?.trim() || '';
     this.pythonPath = pythonPath;
@@ -45,20 +64,30 @@ export class CameraManager {
     this.startTimeoutMs = startTimeoutMs;
     this.stopTimeoutMs = stopTimeoutMs;
     this.spawnProcess = spawnProcess;
+    this.env = env;
     this.child = null;
     this.ready = false;
     this.startPromise = null;
     this.lastError = '';
+    this.lastErrorCode = null;
   }
 
   async snapshot() {
     let updatedAt = null;
     let imageVersion = null;
     try {
-      const metadata = JSON.parse(await readFile(path.join(this.outputDirectory, 'metadata.json'), 'utf8'));
-      updatedAt = metadata.updatedAt || null;
-      const imageStats = await stat(path.join(this.outputDirectory, 'last-frame.jpg'));
+      const imagePath = this.child
+        ? path.join(this.outputDirectory, 'live-frame.jpg')
+        : path.join(this.outputDirectory, 'last-frame.jpg');
+      const imageStats = await stat(imagePath);
       imageVersion = Math.trunc(imageStats.mtimeMs);
+      updatedAt = new Date(imageStats.mtimeMs).toISOString();
+      try {
+        const metadata = JSON.parse(await readFile(path.join(this.outputDirectory, 'metadata.json'), 'utf8'));
+        updatedAt = metadata.updatedAt || updatedAt;
+      } catch {
+        // Durante il live il timestamp del JPEG è sufficiente.
+      }
     } catch {
       // Nessuna immagine acquisita: stato valido prima del primo live.
     }
@@ -71,6 +100,7 @@ export class CameraManager {
       imageAvailable: imageVersion !== null,
       imageVersion,
       error: this.lastError || null,
+      errorCode: this.lastErrorCode,
       safetyTimeoutSeconds: Math.round(this.safetyTimeoutMs / 1000),
     };
   }
@@ -110,6 +140,7 @@ export class CameraManager {
     await mkdir(this.outputDirectory, { recursive: true });
     await unlink(this.stopFile).catch(() => {});
     this.lastError = '';
+    this.lastErrorCode = null;
     this.ready = false;
     const child = this.spawnProcess(this.pythonPath, [
       this.workerPath,
@@ -119,7 +150,7 @@ export class CameraManager {
       '--timeout-seconds', String(Math.round(this.safetyTimeoutMs / 1000)),
     ], {
       cwd: path.dirname(this.workerPath),
-      env: process.env,
+      env: this.env,
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -127,6 +158,9 @@ export class CameraManager {
 
     let ready = false;
     let errorMessage = '';
+    let errorCode = '';
+    let stoppedFrames = null;
+    let stderrText = '';
     const output = readline.createInterface({ input: child.stdout });
     output.on('line', (line) => {
       try {
@@ -135,12 +169,18 @@ export class CameraManager {
           ready = true;
           this.ready = true;
         }
-        if (event.event === 'error') errorMessage = String(event.message || 'Errore worker C410.');
+        if (event.event === 'error') {
+          errorMessage = redactTechnicalMessage(event.message || 'Errore worker C410.', this.env);
+          errorCode = String(event.code || 'STREAM_FAILED');
+        }
+        if (event.event === 'stopped') stoppedFrames = Number(event.frames ?? 0);
       } catch {
         // Il worker di produzione emette solo JSON; righe estranee vengono ignorate.
       }
     });
-    child.stderr.on('data', () => {});
+    child.stderr.on('data', (chunk) => {
+      stderrText = redactTechnicalMessage(`${stderrText}${chunk}`, this.env);
+    });
 
     const waitForReady = new Promise((resolve, reject) => {
       const interval = setInterval(() => {
@@ -151,16 +191,23 @@ export class CameraManager {
       }, 50);
       child.once('error', (workerError) => {
         clearInterval(interval);
-        reject(new CameraControlError(`Worker C410 non avviabile: ${workerError.message}`));
+        const code = diagnosticCode({ workerError, stderr: stderrText });
+        reject(new CameraControlError(
+          redactTechnicalMessage(`Worker C410 non avviabile: ${workerError.message}`, this.env), 503, code,
+        ));
       });
       child.once('exit', (code) => {
         clearInterval(interval);
-        if (!ready) reject(new CameraControlError(errorMessage || `Worker C410 terminato con codice ${code}.`));
+        if (!ready) {
+          const diagnostic = errorCode || diagnosticCode({ stderr: stderrText, exitCode: code, frames: stoppedFrames });
+          const detail = errorMessage || stderrText || `Worker C410 terminato con codice ${code}.`;
+          reject(new CameraControlError(redactTechnicalMessage(detail, this.env), 503, diagnostic));
+        }
       });
     });
     let startTimerId;
     const startTimer = new Promise((_, reject) => {
-      startTimerId = setTimeout(() => reject(new CameraControlError('Timeout durante il risveglio della C410.', 504, 'CAMERA_START_TIMEOUT')), this.startTimeoutMs);
+      startTimerId = setTimeout(() => reject(new CameraControlError('Timeout durante il risveglio della C410.', 504, 'TIMEOUT')), this.startTimeoutMs);
     });
 
     child.once('exit', () => {
@@ -168,14 +215,18 @@ export class CameraManager {
         this.child = null;
         this.ready = false;
       }
-      if (errorMessage) this.lastError = errorMessage;
+      if (errorMessage) {
+        this.lastError = errorMessage;
+        this.lastErrorCode = errorCode || 'STREAM_FAILED';
+      }
     });
 
     try {
       await Promise.race([waitForReady, startTimer]);
       return this.snapshot();
     } catch (startError) {
-      this.lastError = startError.message;
+      this.lastError = redactTechnicalMessage(startError.message, this.env);
+      this.lastErrorCode = startError.code || 'STREAM_FAILED';
       await this.stop();
       throw startError;
     } finally {

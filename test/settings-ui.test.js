@@ -75,3 +75,10 @@ test('camera form requires IP but permits an initially empty MAC', async () => {
   assert.match(script, /hardware-ip'\)\.required = !cloud/);
   assert.match(script, /hardware-mac'\)\.required = !cloud && kind !== 'cameras'/);
 });
+
+test('sensor form preserves its technical protocol and allows cached cloud verification', async () => {
+  const script = await readFile(new URL('../public/settings.js', import.meta.url), 'utf8');
+  assert.match(script, /editingDevice\?\.protocol \|\| provider \|\| 'none'/);
+  assert.match(script, /kind === 'sensors' && device\.connectionType !== 'cloud'/);
+  assert.doesNotMatch(script, /if \(kind === 'sensors'\) throw new Error\('Verifica sensori non ancora disponibile/);
+});

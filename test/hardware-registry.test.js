@@ -125,6 +125,27 @@ test('cloud sensors require neither IP nor MAC while LAN sensors still do', () =
   }] }), /IPv4/);
 });
 
+test('administrative cloud edits preserve verification while technical cloud and LAN edits invalidate it', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'pond-hardware-invalidation-'));
+  const store = new HardwareRegistryStore({
+    filePath: path.join(directory, 'hardware.json'),
+    defaults: defaultHardwareRegistry({ deviceList: devices, cameraIp: '192.168.1.11', dewinConfigured: true }),
+    idFactory: () => 'lan-sensor',
+  });
+  try {
+    assert.equal((await store.update('sensors', 'dewin-pond', { alias: 'Nuovo alias' })).verificationStatus, 'verified');
+    assert.equal((await store.update('sensors', 'dewin-pond', { role: 'external_temperature' })).verificationStatus, 'verified');
+    assert.equal((await store.update('sensors', 'dewin-pond', { provider: 'Altro provider' })).verificationStatus, 'pending');
+    const lan = await store.create('sensors', {
+      alias: 'Sonda LAN', type: 'Temperatura', ip: '192.168.1.40', mac: 'AA:BB:CC:DD:EE:40',
+      protocol: 'local-v1', connectionType: 'lan', role: 'none',
+    });
+    await store.markVerified('sensors', lan.id, { protocol: 'local-v1' });
+    assert.equal((await store.update('sensors', lan.id, { alias: 'Sonda rinominata' })).verificationStatus, 'verified');
+    assert.equal((await store.update('sensors', lan.id, { protocol: 'local-v2' })).verificationStatus, 'pending');
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
 test('successful verification acquires and normalizes a missing MAC but rejects a mismatch', async () => {
   await withStore(async ({ store }) => {
     const verified = await store.markVerified('plugs', 'tapo-p105-pond', {

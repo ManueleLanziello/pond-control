@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { devices } from '../devices.js';
 import { createDeviceStatusLogger, createPondServer } from '../server.js';
+import { CameraControlError } from '../src/camera-manager.js';
 
 const DEVICE_ID_FOR_TEST = 'bf0a19b9163f00415ba1o9';
 const DEFAULT_ASSIGNMENTS = {
@@ -251,6 +252,29 @@ test('camera API exposes status and one explicit ON/OFF toggle without touching 
     });
     assert.equal(invalid.status, 400);
     assert.deepEqual(calls, ['ON', 'OFF']);
+  }, { cameraManager });
+});
+
+test('camera API exposes a safe technical error code without credentials', async () => {
+  const cameraManager = {
+    snapshot: async () => ({
+      configured: true, live: false, status: 'ERROR', imageAvailable: false,
+      errorCode: 'FFMPEG_NOT_FOUND', error: "No module named 'imageio_ffmpeg'",
+    }),
+    imagePath: async () => null,
+    start: async () => { throw new CameraControlError('Dipendenza FFmpeg non disponibile.', 503, 'FFMPEG_NOT_FOUND'); },
+    stop: async () => ({ configured: true, live: false, status: 'READY' }),
+  };
+  await withServer(async (device) => fixture(device), async (baseUrl) => {
+    const status = await (await fetch(`${baseUrl}/api/camera/status`)).json();
+    assert.equal(status.errorCode, 'FFMPEG_NOT_FOUND');
+    const response = await fetch(`${baseUrl}/api/camera/live`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ active: true }),
+    });
+    const raw = await response.text();
+    assert.equal(response.status, 503);
+    assert.equal(JSON.parse(raw).code, 'FFMPEG_NOT_FOUND');
+    assert.doesNotMatch(raw, /username|password|token|private/i);
   }, { cameraManager });
 });
 
