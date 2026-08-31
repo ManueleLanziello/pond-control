@@ -41,6 +41,7 @@ test('settings cards show hardware identity, connection and verification data', 
   }
   assert.match(cardSource, /VERIFICATA/);
   assert.match(cardSource, /DA VERIFICARE/);
+  assert.match(cardSource, /if \(!\(kind === 'sensors' && device\.connectionType === 'cloud'\)\)/);
   assert.match(cardSource, /actionButton\('Modifica'/);
   assert.match(cardSource, /actionButton\('Verifica'/);
   assert.match(cardSource, /actionButton\('Rimuovi'/);
@@ -69,6 +70,10 @@ test('cloud sensor cards show provider and cloud status without IP or MAC rows',
   assert.match(card, /if \(!\(kind === 'sensors' && device\.connectionType === 'cloud'\)\)/);
   assert.match(card, /textRow\('Connessione', 'CLOUD'\)/);
   assert.match(card, /\? \[textRow\('Connessione', 'CLOUD'\), statusRow\]\s*: \[/);
+  const cloudBadgeGuard = card.indexOf("if (!(kind === 'sensors' && device.connectionType === 'cloud'))");
+  assert.ok(cloudBadgeGuard >= 0);
+  assert.ok(cloudBadgeGuard < card.indexOf("verification.textContent"));
+  assert.match(card, /textRow\('Configurazione', device\.configurationStatus === 'complete' \? 'COMPLETA' : 'INCOMPLETA'\)/);
 });
 
 test('camera form requires IP but permits an initially empty MAC', async () => {

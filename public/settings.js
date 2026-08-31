@@ -71,9 +71,12 @@ function hardwareCard(kind, device) {
     ? `${device.type}${device.provider ? ` · ${device.provider}` : ''}`
     : device.model;
   identity.append(alias, model);
-  const verification = document.createElement('span'); verification.className = `hardware-badge is-${device.verificationStatus}`;
-  verification.textContent = device.verificationStatus === 'verified' ? 'VERIFICATA' : 'DA VERIFICARE';
-  heading.append(identity, verification);
+  heading.append(identity);
+  if (!(kind === 'sensors' && device.connectionType === 'cloud')) {
+    const verification = document.createElement('span'); verification.className = `hardware-badge is-${device.verificationStatus}`;
+    verification.textContent = device.verificationStatus === 'verified' ? 'VERIFICATA' : 'DA VERIFICARE';
+    heading.append(verification);
+  }
   const role = document.createElement('select'); role.className = 'role-select'; role.setAttribute('aria-label', `Ruolo per ${device.alias}`);
   role.append(roleOptions(kind, device.role || 'none', device));
   role.addEventListener('change', () => updateRole(kind, device, role.value).catch(showError));

@@ -360,8 +360,8 @@ export function createPondServer({
           })),
           sensors: registry.sensors.map((sensor) => ({
             ...sensor,
-            online: sensor.protocol === 'tuya-cloud' && sensor.role === 'pond_temperature'
-              ? Boolean(dewin.available && dewin.online) : false,
+            online: sensor.connectionType === 'cloud' && sensor.protocol === 'tuya-cloud'
+              ? Boolean(dewin.online) : false,
             rssi: null,
           })),
           cameras: registry.cameras.map((camera) => ({

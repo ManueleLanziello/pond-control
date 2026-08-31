@@ -110,6 +110,29 @@ test('hardware API represents configured Dewin role and current DewinService sta
   }, { dewinConfigured: true, dewinSnapshot: { available: true, online: true } });
 });
 
+test('dashboard and Settings expose the same cached Dewin online and offline state', async () => {
+  for (const online of [true, false]) {
+    await withHardwareApi(async ({ baseUrl, dewinService }) => {
+      const dashboardSnapshot = await (await fetch(`${baseUrl}/api/dewin`)).json();
+      const settings = await (await fetch(`${baseUrl}/api/hardware`)).json();
+      assert.equal(dashboardSnapshot.online, online);
+      assert.equal(settings.sensors[0].online, dashboardSnapshot.online);
+      assert.equal(dewinService.snapshotCalls, 2);
+    }, {
+      dewinConfigured: true,
+      dewinSnapshot: { available: true, online, updatedAt: '2026-08-31T12:00:00.000Z' },
+    });
+  }
+});
+
+test('Settings copies Dewin runtime online independently from administrative role assignment', async () => {
+  await withHardwareApi(async ({ baseUrl, hardwareStore }) => {
+    await hardwareStore.update('sensors', 'dewin-pond', { role: 'none' });
+    const settings = await (await fetch(`${baseUrl}/api/hardware`)).json();
+    assert.equal(settings.sensors[0].online, true);
+  }, { dewinConfigured: true, dewinSnapshot: { available: true, online: true } });
+});
+
 test('hardware API persistently repairs complete legacy Dewin from its cached snapshot', async () => {
   await withHardwareApi(async ({ baseUrl, hardwareStore, dewinService }) => {
     await hardwareStore.update('sensors', 'dewin-pond', { provider: 'Tuya Cloud legacy' });
