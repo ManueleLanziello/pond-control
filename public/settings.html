@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1115">
+  <title>Impostazioni · Pond Control</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="shell settings-shell">
+    <header class="hero settings-hero">
+      <a class="back-link" href="/" aria-label="Torna alla dashboard">← Dashboard</a>
+      <p class="eyebrow">POND CONTROL</p>
+      <h1>Impostazioni</h1>
+      <p class="subtitle">Configurazione locale dell’impianto</p>
+    </header>
+
+    <section class="settings-section" aria-labelledby="roles-heading">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">PRESE TAPO</p>
+          <h2 id="roles-heading">Assegnazione ruoli prese</h2>
+        </div>
+        <p class="section-note">Ogni card rappresenta una presa fisica. Ogni ruolo può essere assegnato a una sola presa.</p>
+      </div>
+      <div id="settings-status" class="status-message" aria-live="polite">Caricamento configurazione…</div>
+      <div id="role-devices" class="settings-grid" aria-label="Ruoli dispositivi Tapo"></div>
+    </section>
+  </main>
+  <script type="module" src="/settings.js"></script>
+</body>
+</html>

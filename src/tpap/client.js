@@ -142,7 +142,10 @@ function resolveCredential(secret, username, extraCrypt) {
 }
 
 export class TpapClient {
-  constructor({ ip, username, password, port = 80, timeout = 5000, jsonTransport = postTpapJson }) {
+  constructor({
+    ip, username, password, port = 80, timeout = 5000,
+    jsonTransport = postTpapJson, binaryTransport = postTpapBuffer,
+  }) {
     this.ip = ip;
     this.username = username;
     this.password = password;
@@ -152,6 +155,7 @@ export class TpapClient {
     this.session = null;
     this.protocol = null;
     this.jsonTransport = jsonTransport;
+    this.binaryTransport = binaryTransport;
     this.httpAgent = createTpapHttpAgent();
     this.discoverHttpResponse = null;
   }
@@ -286,27 +290,47 @@ export class TpapClient {
     });
   }
 
-  async getDeviceInfo() {
+  async encryptedRequest(method, params) {
     if (!this.session) await this.authenticate();
-    const request = JSON.stringify({ method: 'get_device_info', requestTimeMils: Date.now() });
+    const payload = { method };
+    if (params !== undefined) payload.params = params;
+    payload.requestTimeMils = Date.now();
+    const request = JSON.stringify(payload);
     const encrypted = this.session.encrypt(request);
+    const response = await this.binaryTransport(`${this.baseUrl}${this.session.sessionPath}`, encrypted, {
+      timeout: this.timeout,
+      agent: this.httpAgent,
+      contentType: 'application/octet-stream',
+      accept: 'application/octet-stream',
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const decrypted = this.session.decrypt(Buffer.from(await response.arrayBuffer()));
+    let body;
+    try { body = JSON.parse(decrypted); } catch { throw new Error('risposta decifrata non valida'); }
+    if (body.error_code !== 0) throw new Error(`error_code=${body.error_code}`);
+    return body.result || {};
+  }
+
+  async getDeviceInfo() {
     try {
-      const response = await postTpapBuffer(`${this.baseUrl}${this.session.sessionPath}`, encrypted, {
-        timeout: this.timeout,
-        agent: this.httpAgent,
-        contentType: 'application/octet-stream',
-        accept: 'application/octet-stream',
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const decrypted = this.session.decrypt(Buffer.from(await response.arrayBuffer()));
-      let body;
-      try { body = JSON.parse(decrypted); } catch { throw new Error('risposta decifrata non valida'); }
-      if (body.error_code !== 0) throw new Error(`error_code=${body.error_code}`);
+      const result = await this.encryptedRequest('get_device_info');
       debug('TPAP get_device_info: OK');
-      return body.result || {};
+      return result;
     } catch (error) {
       debug(`TPAP get_device_info: FALLITA (${error.message})`);
       throw new Error(`TPAP get_device_info: ${error.message}`);
+    }
+  }
+
+  async setDeviceOn(deviceOn) {
+    if (typeof deviceOn !== 'boolean') throw new TypeError('device_on deve essere booleano.');
+    try {
+      const result = await this.encryptedRequest('set_device_info', { device_on: deviceOn });
+      debug('TPAP set_device_info(device_on): OK');
+      return result;
+    } catch (error) {
+      debug(`TPAP set_device_info(device_on): FALLITA (${error.message})`);
+      throw new Error(`TPAP set_device_info(device_on): ${error.message}`);
     }
   }
 

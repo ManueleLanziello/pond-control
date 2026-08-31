@@ -3,25 +3,75 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#0b1115">
+  <meta name="theme-color" content="#050b12">
+  <meta name="application-name" content="Pond Control">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Pond Control</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icons/pond.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icons/pond-192.png">
   <link rel="stylesheet" href="/style.css">
 </head>
-<body>
-  <main class="shell">
-    <header class="hero">
-      <p class="eyebrow">LOCAL MONITOR</p>
-      <h1>Pond Control</h1>
-      <p class="subtitle">Monitoraggio impianto laghetto</p>
+<body class="dashboard-body">
+  <main class="dashboard-shell">
+    <header class="dashboard-header">
+      <div class="brand">
+        <img class="brand-mark" src="/icons/pond.svg" alt="">
+        <div>
+          <h1><span>POND</span> CONTROL</h1>
+          <p>Monitoraggio impianto laghetto</p>
+        </div>
+      </div>
+
+      <section class="system-status" aria-label="Stato sistema">
+        <span class="system-status-dot" aria-hidden="true"></span>
+        <div>
+          <strong>Sistema operativo</strong>
+          <span id="status-message" class="status-message" aria-live="polite">Caricamento dispositivi…</span>
+        </div>
+      </section>
+
+      <a class="settings-link" href="/settings" aria-label="Apri impostazioni">
+        <img src="/icons/settings.svg" alt="">
+        <strong>Impostazioni</strong>
+      </a>
     </header>
 
-    <section id="status-message" class="status-message" aria-live="polite">Caricamento dispositivi…</section>
-    <section id="devices" class="device-grid" aria-label="Dispositivi Tapo"></section>
+    <section id="devices" class="device-grid" aria-label="Panoramica Pond"></section>
+
+    <section class="insights-grid" aria-label="Analisi e automazioni Pond">
+      <article id="temperature-chart-card" class="insight-card temperature-chart-card"></article>
+      <article id="camera-card" class="insight-card camera-card" aria-labelledby="camera-title">
+        <header class="camera-card-header">
+          <div>
+            <span class="chart-eyebrow">TAPO C410</span>
+            <h2 id="camera-title">Telecamera Pond</h2>
+          </div>
+          <strong id="camera-status" class="camera-status" aria-live="polite">CARICAMENTO…</strong>
+        </header>
+        <div class="camera-media">
+          <img id="camera-image" src="/api/camera/image" alt="Vista della telecamera Pond">
+          <span class="camera-image-placeholder">Nessuna immagine disponibile</span>
+        </div>
+        <footer class="camera-controls">
+          <span id="camera-updated-at">Ultima immagine: —</span>
+          <button id="camera-live-toggle" class="camera-live-toggle" type="button" aria-pressed="false">
+            <span>LIVESTREAM</span>
+            <strong id="camera-live-state">OFF</strong>
+          </button>
+        </footer>
+      </article>
+    </section>
 
     <footer>
+      <span>Pond-Control · Fase 1</span>
+      <i aria-hidden="true"></i>
       <span id="last-update">Ultimo aggiornamento: --:--:--</span>
     </footer>
   </main>
   <script type="module" src="/app.js"></script>
+  <script type="module" src="/pwa.js"></script>
 </body>
 </html>

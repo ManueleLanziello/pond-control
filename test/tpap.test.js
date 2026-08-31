@@ -46,14 +46,39 @@ for (const encryption of ['aes_128_ccm', 'aes_256_ccm', 'chacha20_poly1305']) {
   });
 }
 
-test('read-only status source contains no mutating device method', async () => {
-  const sources = await Promise.all([
-    readFile(new URL('../status.js', import.meta.url), 'utf8'),
-    readFile(new URL('../src/tpap/client.js', import.meta.url), 'utf8'),
-  ]);
-  const combined = sources.join('\n');
-  assert.doesNotMatch(combined, /set_device_info|turnOn|turnOff|device_on\s*:/);
-  assert.match(combined, /get_device_info/);
+test('status CLI remains read-only while TPAP exposes only the minimal device_on write', async () => {
+  const statusSource = await readFile(new URL('../status.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(statusSource, /set_device_info|turnOn|turnOff|device_on\s*:/);
+  assert.match(statusSource, /getDeviceInfo/);
+});
+
+test('TPAP setDeviceOn sends only set_device_info with a boolean device_on parameter', async () => {
+  const requests = [];
+  const binaryTransport = async (_url, encrypted) => {
+    requests.push(JSON.parse(Buffer.from(encrypted).toString('utf8')));
+    return new Response('{"error_code":0,"result":{}}');
+  };
+  const client = new TpapClient({
+    ip: '192.0.2.1', username: 'test', password: 'test', binaryTransport,
+  });
+  client.session = {
+    sessionPath: '/app',
+    encrypt: (value) => Buffer.from(value),
+    decrypt: (value) => Buffer.from(value).toString('utf8'),
+    destroy: () => {},
+  };
+  try {
+    await client.setDeviceOn(true);
+    const request = requests[0];
+    assert.equal(request.method, 'set_device_info');
+    assert.deepEqual(request.params, { device_on: true });
+    assert.deepEqual(Object.keys(request.params), ['device_on']);
+    assert.equal(typeof request.requestTimeMils, 'number');
+    await assert.rejects(client.setDeviceOn('ON'), /booleano/);
+    assert.equal(requests.length, 1);
+  } finally {
+    client.close();
+  }
 });
 
 test('HTTP diagnostic recognizes JSON with a UTF-8 BOM', () => {

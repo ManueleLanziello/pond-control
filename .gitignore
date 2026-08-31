@@ -2,3 +2,10 @@
 .env.*
 !.env.example
 node_modules/
+__pycache__/
+*.py[cod]
+test-output/
+config/device-roles.json
+data/dewin-history/
+.venv-camera/
+data/camera/
