@@ -69,3 +69,9 @@ test('cloud sensor cards show provider and cloud status without IP or MAC rows',
   assert.match(card, /textRow\('Connessione', 'CLOUD'\)/);
   assert.match(card, /\? \[textRow\('Connessione', 'CLOUD'\), statusRow\]\s*: \[/);
 });
+
+test('camera form requires IP but permits an initially empty MAC', async () => {
+  const script = await readFile(new URL('../public/settings.js', import.meta.url), 'utf8');
+  assert.match(script, /hardware-ip'\)\.required = !cloud/);
+  assert.match(script, /hardware-mac'\)\.required = !cloud && kind !== 'cameras'/);
+});

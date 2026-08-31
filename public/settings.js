@@ -136,7 +136,7 @@ function updateConnectionFields() {
   document.querySelector('#hardware-ip-field').hidden = cloud;
   document.querySelector('#hardware-mac-field').hidden = cloud;
   document.querySelector('#hardware-ip').required = !cloud;
-  document.querySelector('#hardware-mac').required = !cloud;
+  document.querySelector('#hardware-mac').required = !cloud && kind !== 'cameras';
 }
 
 function openForm(kind, device = null) {

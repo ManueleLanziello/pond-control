@@ -140,6 +140,20 @@ test('read-only verification records detected data without any control method', 
   });
 });
 
+test('camera API accepts an IP edit while MAC is still unknown without running a probe', async () => {
+  await withHardwareApi(async ({ baseUrl, verificationCalls }) => {
+    const { response, payload } = await jsonRequest(baseUrl, '/api/hardware/cameras/tapo-c410-pond', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ip: '192.168.1.11', mac: '' }),
+    });
+    assert.equal(response.status, 200);
+    assert.equal(payload.device.ip, '192.168.1.11');
+    assert.equal(payload.device.mac, '');
+    assert.equal(payload.device.configurationStatus, 'incomplete');
+    assert.equal(verificationCalls.length, 0);
+  });
+});
+
 test('sensor persistence is available while verification remains explicitly unavailable', async () => {
   await withHardwareApi(async ({ baseUrl, hardwareStore }) => {
     const sensor = {

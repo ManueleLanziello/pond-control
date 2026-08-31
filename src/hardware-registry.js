@@ -51,7 +51,8 @@ function normalizeRecord(kind, input, { allowIncomplete = false } = {}) {
   const model = kind === 'sensors' ? String(input.model || '').trim() : requiredText(input.model, 'modello');
   const ip = connectionType === 'cloud' && !input.ip ? '' : validateIpv4(input.ip);
   let mac = '';
-  if (input.mac || (!allowIncomplete && connectionType === 'lan')) mac = normalizeMac(input.mac);
+  const macRequired = kind === 'plugs' || (kind === 'sensors' && connectionType === 'lan');
+  if (input.mac || (!allowIncomplete && macRequired)) mac = normalizeMac(input.mac);
   const protocol = requiredText(input.protocol || (kind === 'plugs' ? 'tpap' : kind === 'cameras' ? 'pytapo-https' : 'none'), 'protocollo');
   const provider = kind === 'sensors' ? String(input.provider || '').trim() : undefined;
   const role = kind === 'plugs' ? undefined : String(input.role || 'none');

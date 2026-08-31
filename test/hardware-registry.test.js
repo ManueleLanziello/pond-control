@@ -140,6 +140,24 @@ test('successful verification acquires and normalizes a missing MAC but rejects 
   });
 });
 
+test('camera can save a valid IP without MAC and acquires it after read-only verification', async () => {
+  await withStore(async ({ store }) => {
+    const saved = await store.update('cameras', 'tapo-c410-pond', { ip: '192.168.1.11', mac: '' });
+    assert.equal(saved.ip, '192.168.1.11');
+    assert.equal(saved.mac, '');
+    assert.equal(saved.configurationStatus, 'incomplete');
+    const verified = await store.markVerified('cameras', 'tapo-c410-pond', {
+      model: 'C410', mac: 'AA-BB-CC-DD-EE-11', online: true,
+    });
+    assert.equal(verified.mac, 'AA:BB:CC:DD:EE:11');
+    assert.equal(verified.detected.mac, 'AA:BB:CC:DD:EE:11');
+    assert.equal(verified.configurationStatus, 'complete');
+    await assert.rejects(store.markVerified('cameras', 'tapo-c410-pond', {
+      model: 'C410', mac: 'AA-BB-CC-DD-EE-12', online: true,
+    }), (error) => error.code === 'MAC_MISMATCH');
+  });
+});
+
 test('removal is blocked while a sensor or camera owns an operational role', async () => {
   await withStore(async ({ store }) => {
     const sensor = await store.create('sensors', {
