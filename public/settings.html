@@ -16,16 +16,16 @@
       <p class="subtitle">Configurazione locale dell’impianto</p>
     </header>
 
-    <section class="settings-section" aria-labelledby="roles-heading">
+    <section class="settings-section" aria-labelledby="plugs-heading">
       <div class="section-heading">
         <div>
           <p class="eyebrow">PRESE TAPO</p>
-          <h2 id="roles-heading">Assegnazione ruoli prese</h2>
+          <h2 id="plugs-heading">Prese</h2>
         </div>
-        <p class="section-note">Ogni card rappresenta una presa fisica. Ogni ruolo può essere assegnato a una sola presa.</p>
+        <button class="settings-add-button" type="button" data-add-kind="plugs">Aggiungi presa</button>
       </div>
       <div id="settings-status" class="status-message" aria-live="polite">Caricamento configurazione…</div>
-      <div id="role-devices" class="settings-grid" aria-label="Ruoli dispositivi Tapo"></div>
+      <div id="plug-devices" class="settings-grid" aria-label="Registro hardware prese"></div>
     </section>
 
     <section class="settings-section" aria-labelledby="sensors-heading">
@@ -34,15 +34,41 @@
           <p class="eyebrow">SENSORI</p>
           <h2 id="sensors-heading">Sensori</h2>
         </div>
-        <p class="section-note">Area predisposta per i futuri sensori dell’impianto.</p>
+        <button class="settings-add-button" type="button" data-add-kind="sensors">Aggiungi sensore</button>
       </div>
-      <div class="settings-grid" aria-label="Sensori">
-        <article class="device-card settings-card">
-          <p class="empty-assignment">Nessun sensore configurato</p>
-        </article>
+      <div id="sensor-devices" class="settings-grid" aria-label="Registro hardware sensori"></div>
+    </section>
+
+    <section class="settings-section" aria-labelledby="cameras-heading">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">TELECAMERE</p>
+          <h2 id="cameras-heading">Telecamere</h2>
+        </div>
+        <button class="settings-add-button" type="button" data-add-kind="cameras">Aggiungi telecamera</button>
       </div>
+      <div id="camera-devices" class="settings-grid" aria-label="Registro hardware telecamere"></div>
     </section>
   </main>
+  <dialog id="hardware-dialog" class="hardware-dialog">
+    <form id="hardware-form" method="dialog">
+      <div class="section-heading">
+        <div><p class="eyebrow" id="hardware-form-kind">DISPOSITIVO</p><h2 id="hardware-form-title">Aggiungi dispositivo</h2></div>
+        <button class="dialog-close" type="button" data-close-dialog aria-label="Chiudi">×</button>
+      </div>
+      <input id="hardware-id" type="hidden"><input id="hardware-kind" type="hidden">
+      <label>Alias<input id="hardware-alias" name="alias" required></label>
+      <label>Modello / tipo<input id="hardware-model" name="model" required></label>
+      <label>Indirizzo IP<input id="hardware-ip" name="ip" inputmode="decimal" required></label>
+      <label>Indirizzo MAC<input id="hardware-mac" name="mac" placeholder="AA:BB:CC:DD:EE:FF" required></label>
+      <label>Ruolo<select id="hardware-role" name="role"></select></label>
+      <p id="hardware-form-status" class="status-message" aria-live="polite"></p>
+      <div class="hardware-form-actions">
+        <button id="hardware-verify" class="settings-action-button" type="button">Verifica</button>
+        <button id="hardware-save" class="settings-add-button" type="submit">Salva</button>
+      </div>
+    </form>
+  </dialog>
   <script type="module" src="/settings.js"></script>
 </body>
 </html>

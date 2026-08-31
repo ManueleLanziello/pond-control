@@ -20,14 +20,6 @@ let heaterCommandMessage = '';
 let pumpCommandPending = false;
 let pumpCommandMessage = '';
 
-function signalQuality(rssi) {
-  if (typeof rssi !== 'number') return 'Non disponibile';
-  if (rssi >= -60) return 'Ottimo';
-  if (rssi >= -70) return 'Buono';
-  if (rssi >= -80) return 'Debole';
-  return 'Molto debole';
-}
-
 function iconImage(source, className) {
   const image = document.createElement('img');
   image.className = className;
@@ -243,7 +235,7 @@ function functionCard(pondFunction, pumpFunction) {
   }
   const heading = cardMainHeader(
     functionTitle,
-    device ? `Presa ${device.model}` : 'Nessuna presa assegnata',
+    device ? `${device.name} · ${device.model}` : 'Nessuna presa assegnata',
     functionIcon,
     primaryState,
     button,
@@ -261,9 +253,7 @@ function functionCard(pondFunction, pumpFunction) {
   const details = document.createElement('div');
   details.className = 'details';
   details.append(
-    valueRow('/icons/wifi.svg', 'Connessione', device.online ? 'ONLINE' : 'OFFLINE', typeof device.rssi === 'number' ? `${device.rssi} dBm · ${signalQuality(device.rssi)}` : 'Segnale non disponibile', device.online ? 'online-text' : 'offline-text'),
-    valueRow('/icons/shield.svg', 'Protocollo', device.protocol),
-    valueRow('/icons/network.svg', 'Indirizzo IP', device.ip, '', 'mono'),
+    valueRow('/icons/wifi.svg', 'Connessione', device.online ? 'ONLINE' : 'OFFLINE', '', device.online ? 'online-text' : 'offline-text'),
   );
   card.append(heading, details);
 

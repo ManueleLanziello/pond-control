@@ -54,11 +54,11 @@ test('changing a Tapo nickname never changes function or physical device identit
   assert.equal(pump.device.id, 'tapo-p105-pond');
 });
 
-test('dashboard labels assigned plugs by model and does not render Tapo nickname or a separate model row', async () => {
+test('dashboard labels assigned plugs by alias and model without technical connection details', async () => {
   const source = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
   const cardSource = source.slice(source.indexOf('function functionCard'), source.indexOf('function renderDevices'));
-  assert.match(cardSource, /device \? `Presa \$\{device\.model\}` : 'Nessuna presa assegnata'/);
-  assert.doesNotMatch(cardSource, /device\.name|Modello:/);
+  assert.match(cardSource, /device \? `\$\{device\.name\} · \$\{device\.model\}` : 'Nessuna presa assegnata'/);
+  assert.doesNotMatch(cardSource, /device\.(?:ip|protocol|rssi)|Protocollo|Indirizzo IP|Qualità segnale/);
 });
 
 test('dashboard polling remains five seconds and role is the only assignment key', async () => {

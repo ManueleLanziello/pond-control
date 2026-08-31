@@ -28,6 +28,8 @@ SAFE_INFO_KEYS = {
     "fw_cur",
     "fw_ver",
     "hw_ver",
+    "mac",
+    "mac_address",
     "model",
     "name",
     "sw_ver",

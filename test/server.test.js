@@ -350,8 +350,8 @@ test('static dashboard files are served correctly', async () => {
       ['/pump-control.js', 'text/javascript', 'requestPumpState'],
       ['/weather-icons.js', 'text/javascript', 'weatherIconForCode'],
       ['/style.css', 'text/css', '.device-grid'],
-      ['/settings', 'text/html', 'Assegnazione ruoli prese'],
-      ['/settings.js', 'text/javascript', '/api/device-roles/'],
+      ['/settings', 'text/html', 'Telecamere'],
+      ['/settings.js', 'text/javascript', '/api/hardware'],
     ];
     for (const [pathname, contentType, marker] of expectations) {
       const response = await fetch(`${baseUrl}${pathname}`);

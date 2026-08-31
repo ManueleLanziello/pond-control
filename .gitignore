@@ -9,3 +9,4 @@ config/device-roles.json
 data/dewin-history/
 .venv-camera/
 data/camera/
+data/config/hardware.json

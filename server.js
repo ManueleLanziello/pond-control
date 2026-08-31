@@ -11,6 +11,10 @@ import { DeviceRoleStore, VALID_DEVICE_ROLES } from './src/device-roles.js';
 import { createDewinServiceFromEnvironment } from './src/dewin-service.js';
 import { DewinHistoryStore } from './src/dewin-history-store.js';
 import { createHeaterController, HeaterControlError } from './src/heater-control.js';
+import {
+  CAMERA_ROLES, defaultHardwareRegistry, HardwareRegistryError, HardwareRegistryStore, SENSOR_ROLES,
+} from './src/hardware-registry.js';
+import { verifyTapoCamera, verifyTapoPlug } from './src/hardware-verifier.js';
 import { KlapV2Client } from './src/klap/client.js';
 import { error, info } from './src/logger.js';
 import { createPumpController, PumpControlError } from './src/pump-control.js';
@@ -69,6 +73,7 @@ const STATIC_FILES = new Map([
   ['/icons/wifi.svg', ['icons/wifi.svg', 'image/svg+xml']],
 ]);
 const DEFAULT_ROLE_FILE = path.join(ROOT, 'config', 'device-roles.json');
+const DEFAULT_HARDWARE_FILE = path.join(ROOT, 'data', 'config', 'hardware.json');
 const UNAVAILABLE_DEWIN_SERVICE = Object.freeze({
   snapshot: () => ({ available: false, online: false, stale: true, datapoints: [] }),
   history: async (date) => ({ date: date ?? null, samples: [] }),
@@ -189,7 +194,18 @@ export function createPondServer({
   weatherService = new WeatherService({ config: WEATHER_CONFIG, log: info, logError: error }),
   dewinService = UNAVAILABLE_DEWIN_SERVICE,
   cameraManager = UNAVAILABLE_CAMERA_MANAGER,
+  hardwareStore = new HardwareRegistryStore({
+    filePath: DEFAULT_HARDWARE_FILE,
+    defaults: defaultHardwareRegistry({ deviceList, cameraIp: process.env.TAPO_CAMERA_IP }),
+  }),
+  verifyPlug = (candidate) => verifyTapoPlug(candidate, {
+    ...credentialsFromEnvironment(), timeout: Number(process.env.TAPO_DEVICE_TIMEOUT_MS || 5000),
+  }),
+  verifyCamera = (candidate) => verifyTapoCamera(candidate, {
+    pythonPath: defaultCameraPython(ROOT), probePath: path.join(ROOT, 'tools', 'c410_probe.py'),
+  }),
 } = {}) {
+  const runtimeDeviceIds = new Set(deviceList.map((device) => device.id));
   const controlHeater = controlHeaterState || createHeaterController({
     deviceList,
     roleStore,
@@ -301,6 +317,110 @@ export function createPondServer({
         sendJson(response, 405, { error: 'Metodo non consentito' });
         return;
       }
+      if (url.pathname === '/api/hardware') {
+        if (request.method !== 'GET') {
+          sendJson(response, 405, { error: 'Metodo non consentito' });
+          return;
+        }
+        const [registry, assignments] = await Promise.all([hardwareStore.read(), roleStore.read()]);
+        const livePlugs = new Map(deviceManager.snapshots().map((device) => [device.id, device]));
+        sendJson(response, 200, {
+          plugs: registry.plugs.map((plug) => ({
+            ...plug,
+            role: assignments[plug.id] || 'none',
+            runtimeSupported: runtimeDeviceIds.has(plug.id),
+            online: livePlugs.get(plug.id)?.online || false,
+            rssi: livePlugs.get(plug.id)?.rssi ?? null,
+            state: livePlugs.get(plug.id)?.state ?? null,
+          })),
+          sensors: registry.sensors.map((sensor) => ({ ...sensor, online: false, rssi: null })),
+          cameras: registry.cameras.map((camera) => ({
+            ...camera, online: camera.verificationStatus === 'verified', rssi: null,
+          })),
+          roles: {
+            plugs: VALID_DEVICE_ROLES,
+            sensors: SENSOR_ROLES,
+            cameras: CAMERA_ROLES,
+          },
+        });
+        return;
+      }
+      const verifyHardwareMatch = url.pathname.match(/^\/api\/hardware\/(plugs|cameras)\/verify$/);
+      if (verifyHardwareMatch) {
+        if (request.method !== 'POST') {
+          sendJson(response, 405, { error: 'Metodo non consentito' });
+          return;
+        }
+        try {
+          const payload = await readJsonRequest(request, 4096);
+          const detected = await (verifyHardwareMatch[1] === 'plugs' ? verifyPlug(payload) : verifyCamera(payload));
+          sendJson(response, 200, { verified: true, detected });
+        } catch (requestError) {
+          sendJson(response, 400, { verified: false, code: requestError.code || 'VERIFY_FAILED', error: requestError.message });
+        }
+        return;
+      }
+      const hardwareMatch = url.pathname.match(/^\/api\/hardware\/(plugs|sensors|cameras)(?:\/([^/]+))?(?:\/(verify))?$/);
+      if (hardwareMatch) {
+        const [, kind, encodedId, action] = hardwareMatch;
+        try {
+          if (!encodedId && request.method === 'POST') {
+            const payload = await readJsonRequest(request, 4096);
+            if (kind === 'plugs' && payload.role && payload.role !== 'none') {
+              throw new HardwareRegistryError('Le nuove prese restano senza ruolo finché non sono attivate nel runtime.', 'RUNTIME_ACTIVATION_REQUIRED');
+            }
+            const detected = kind === 'plugs'
+              ? await verifyPlug(payload)
+              : kind === 'cameras'
+                ? await verifyCamera(payload)
+                : null;
+            const created = await hardwareStore.create(kind, payload);
+            const device = detected
+              ? await hardwareStore.markVerified(kind, created.id, detected)
+              : created;
+            sendJson(response, 201, { device, detected });
+            return;
+          }
+          if (!encodedId) throw new HardwareRegistryError('ID dispositivo mancante.', 'MISSING_ID');
+          const id = decodeURIComponent(encodedId);
+          if (action === 'verify' && request.method === 'POST') {
+            if (kind === 'sensors') throw new HardwareRegistryError('Verifica sensori non ancora disponibile.', 'NOT_IMPLEMENTED');
+            const registry = await hardwareStore.read();
+            const configured = registry[kind].find((record) => record.id === id);
+            if (!configured) throw new HardwareRegistryError('Dispositivo non trovato.', 'NOT_FOUND');
+            const detected = await (kind === 'plugs' ? verifyPlug(configured) : verifyCamera(configured));
+            const device = await hardwareStore.markVerified(kind, id, detected);
+            sendJson(response, 200, { verified: true, device, detected });
+            return;
+          }
+          if (request.method === 'PUT') {
+            const payload = await readJsonRequest(request, 4096);
+            if (kind === 'plugs' && payload.role && payload.role !== 'none' && !runtimeDeviceIds.has(id)) {
+              throw new HardwareRegistryError(
+                'La presa è registrata ma non è ancora supportata dal runtime corrente.',
+                'RUNTIME_DEVICE_UNSUPPORTED',
+              );
+            }
+            const device = await hardwareStore.update(kind, id, payload);
+            if (kind === 'plugs' && payload.role !== undefined) await roleStore.assign(id, payload.role);
+            sendJson(response, 200, { device });
+            return;
+          }
+          if (request.method === 'DELETE') {
+            if (kind === 'plugs' && ((await roleStore.read())[id] || 'none') !== 'none') {
+              throw new HardwareRegistryError('Liberare il ruolo prima di rimuovere la presa.', 'ROLE_ASSIGNED');
+            }
+            sendJson(response, 200, { removed: await hardwareStore.remove(kind, id) });
+            return;
+          }
+          sendJson(response, 405, { error: 'Metodo non consentito' });
+        } catch (requestError) {
+          sendJson(response, requestError.code === 'NOT_IMPLEMENTED' ? 501 : 400, {
+            code: requestError.code || 'INVALID_HARDWARE_REQUEST', error: requestError.message,
+          });
+        }
+        return;
+      }
       if (url.pathname === '/api/functions/heater/state') {
         if (request.method !== 'PUT') {
           sendJson(response, 405, { error: 'Metodo non consentito' });
@@ -382,6 +502,11 @@ if (isMain) {
   try {
     credentialsFromEnvironment();
     const roleStore = new DeviceRoleStore({ filePath: DEFAULT_ROLE_FILE, deviceList: defaultDevices });
+    const hardwareStore = new HardwareRegistryStore({
+      filePath: DEFAULT_HARDWARE_FILE,
+      defaults: defaultHardwareRegistry({ deviceList: defaultDevices, cameraIp: process.env.TAPO_CAMERA_IP }),
+    });
+    await hardwareStore.read();
     const deviceManager = new DeviceManager({
       deviceList: defaultDevices,
       createClient: createConfiguredClient,
@@ -401,7 +526,7 @@ if (isMain) {
     } catch (dewinConfigError) {
       error(`[DEWIN] servizio non configurato: ${dewinConfigError.message}`);
     }
-    const server = createPondServer({ roleStore, deviceManager, weatherService, dewinService, cameraManager });
+    const server = createPondServer({ roleStore, deviceManager, weatherService, dewinService, cameraManager, hardwareStore });
     const safetyMonitor = createSafetyMonitor({
       deviceList: defaultDevices,
       roleStore,
