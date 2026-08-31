@@ -30,3 +30,13 @@ test('settings physical icons follow the model and never the assigned role', asy
   assert.doesNotMatch(source, /\/icons\/\$\{device\.role\}/);
   assert.match(source, /title\.textContent = `Presa \$\{device\.model\}`/);
 });
+
+test('settings reserves a static card for future sensors without sensor logic', async () => {
+  const [page, script] = await Promise.all([
+    readFile(new URL('../public/settings.html', import.meta.url), 'utf8'),
+    readFile(new URL('../public/settings.js', import.meta.url), 'utf8'),
+  ]);
+  assert.match(page, /<h2 id="sensors-heading">Sensori<\/h2>/);
+  assert.match(page, /<article class="device-card settings-card">[\s\S]*?Nessun sensore configurato/);
+  assert.doesNotMatch(script, /sensor/i);
+});
