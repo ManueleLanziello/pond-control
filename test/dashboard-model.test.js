@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import { buildDashboardFunctions, POND_FUNCTIONS } from '../public/dashboard-model.js';
+import {
+  buildDashboardFunctions, plugDashboardLabel, POND_FUNCTIONS, sensorDashboardLabel,
+} from '../public/dashboard-model.js';
 
 const p105 = {
   id: 'tapo-p105-pond', role: 'pump', name: 'Presa Tapo P105', model: 'P105',
@@ -54,11 +56,37 @@ test('changing a Tapo nickname never changes function or physical device identit
   assert.equal(pump.device.id, 'tapo-p105-pond');
 });
 
-test('dashboard labels assigned plugs by alias and model without technical connection details', async () => {
+test('dashboard labels assigned plugs through the administrative registry without technical connection details', async () => {
   const source = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
   const cardSource = source.slice(source.indexOf('function functionCard'), source.indexOf('function renderDevices'));
-  assert.match(cardSource, /device \? `\$\{device\.name\} · \$\{device\.model\}` : 'Nessuna presa assegnata'/);
+  assert.match(cardSource, /plugDashboardLabel\(device, latestHardware\)/);
   assert.doesNotMatch(cardSource, /device\.(?:ip|protocol|rssi)|Protocollo|Indirizzo IP|Qualità segnale/);
+});
+
+test('dashboard subtitles use configurable hardware aliases and update when aliases change', () => {
+  const hardware = {
+    plugs: [
+      { id: p105.id, alias: 'Presa Tapo P105', model: 'P105' },
+      { id: p100m.id, alias: 'Presa Tapo P100M', model: 'P100M' },
+    ],
+    sensors: [{ id: 'dewin-pond', alias: 'Dewin Pond', model: '', role: 'pond_temperature' }],
+  };
+  assert.equal(plugDashboardLabel(p105, hardware), 'Presa Tapo P105 · P105');
+  assert.equal(plugDashboardLabel(p100m, hardware), 'Presa Tapo P100M · P100M');
+  assert.equal(sensorDashboardLabel('pond_temperature', hardware, 'fallback'), 'Dewin Pond');
+  hardware.plugs[0].alias = 'Pompa laghetto';
+  hardware.sensors[0].alias = 'Sonda acqua principale';
+  assert.equal(plugDashboardLabel(p105, hardware), 'Pompa laghetto · P105');
+  assert.equal(sensorDashboardLabel('pond_temperature', hardware, 'fallback'), 'Sonda acqua principale');
+});
+
+test('dashboard subtitle helpers preserve safe fallbacks and omit empty model separators', () => {
+  assert.equal(plugDashboardLabel(p105, null), 'Presa Tapo P105 · P105');
+  assert.equal(plugDashboardLabel(null, null), 'Nessuna presa assegnata');
+  assert.equal(sensorDashboardLabel('pond_temperature', null, 'Sonda DEWIN'), 'Sonda DEWIN');
+  assert.equal(sensorDashboardLabel('pond_temperature', {
+    sensors: [{ role: 'pond_temperature', alias: 'Dewin Pond', model: 'TS-1' }],
+  }, 'fallback'), 'Dewin Pond · TS-1');
 });
 
 test('dashboard polling remains five seconds and role is the only assignment key', async () => {
@@ -97,6 +125,7 @@ test('dashboard renders the five compact cards in the required order', async () 
   assert.match(temperatureSource, /valueRow\('\/icons\/update\.svg', 'Aggiornato'/);
   assert.match(temperatureSource, /view\.pondTemperature/);
   assert.match(appSource, /fetch\('\/api\/dewin'/);
+  assert.match(appSource, /fetch\('\/api\/hardware'/);
   assert.doesNotMatch(temperatureSource, /weather\.temperature/);
   assert.match(styleSource, /grid-template-columns:\s*repeat\(5,\s*minmax\(0,1fr\)\)/);
   assert.match(styleSource, /\.card-heading\s*\{[^}]*grid-template-rows:\s*32px 24px 112px/);

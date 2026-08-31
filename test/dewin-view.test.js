@@ -26,6 +26,8 @@ test('Pond card source reads /api/dewin and never calls Tuya or a write endpoint
   const card = source.slice(source.indexOf('function pondTemperatureCard'), source.indexOf('function functionCard'));
   assert.match(source, /fetch\('\/api\/dewin'/);
   assert.match(card, /dewinCardView\(dewin\)/);
+  assert.match(card, /sensorDashboardLabel\('pond_temperature', latestHardware/);
+  assert.doesNotMatch(card, /cardMainHeader\('Temperatura Acqua', 'Sonda DEWIN'/);
   assert.match(card, /view\.pondTemperature/);
   assert.match(card, /Ambiente/);
   assert.match(card, /Umidità/);

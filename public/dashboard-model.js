@@ -9,3 +9,20 @@ export function buildDashboardFunctions(devices) {
     device: devices.find((device) => device.role === pondFunction.role) || null,
   }));
 }
+
+function identityLabel(alias, model) {
+  const normalizedAlias = String(alias || '').trim();
+  const normalizedModel = String(model || '').trim();
+  return [normalizedAlias, normalizedModel].filter(Boolean).join(' · ');
+}
+
+export function plugDashboardLabel(device, hardware) {
+  if (!device) return 'Nessuna presa assegnata';
+  const configured = hardware?.plugs?.find((plug) => plug.id === device.id);
+  return identityLabel(configured?.alias || device.name, configured?.model || device.model);
+}
+
+export function sensorDashboardLabel(role, hardware, fallbackAlias = '') {
+  const configured = hardware?.sensors?.find((sensor) => sensor.role === role);
+  return identityLabel(configured?.alias || fallbackAlias, configured?.model);
+}

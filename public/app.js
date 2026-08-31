@@ -1,4 +1,4 @@
-import { buildDashboardFunctions } from './dashboard-model.js';
+import { buildDashboardFunctions, plugDashboardLabel, sensorDashboardLabel } from './dashboard-model.js';
 import { initCameraCard } from './camera-view.js';
 import { dewinCardView, formatDewinValue } from './dewin-view.js';
 import { heaterControlView, requestHeaterState } from './heater-control.js';
@@ -15,6 +15,7 @@ let latestDevices = [];
 let latestWeather = null;
 let latestDewin = null;
 let latestDewinHistory = null;
+let latestHardware = null;
 let heaterCommandPending = false;
 let heaterCommandMessage = '';
 let pumpCommandPending = false;
@@ -154,7 +155,8 @@ function pondTemperatureCard(dewin) {
   const unit = document.createElement('span');
   unit.className = 'pond-temperature-unit';
   unit.textContent = '°C';
-  const heading = cardMainHeader('Temperatura Acqua', 'Sonda DEWIN', temperatureIcon, value, unit, 'temperature-subtitle');
+  const sensorSubtitle = sensorDashboardLabel('pond_temperature', latestHardware, dewin?.name || 'Sonda DEWIN');
+  const heading = cardMainHeader('Temperatura Acqua', sensorSubtitle, temperatureIcon, value, unit, 'temperature-subtitle');
   card.append(heading);
 
   if (!view.available) {
@@ -235,7 +237,7 @@ function functionCard(pondFunction, pumpFunction) {
   }
   const heading = cardMainHeader(
     functionTitle,
-    device ? `${device.name} · ${device.model}` : 'Nessuna presa assegnata',
+    plugDashboardLabel(device, latestHardware),
     functionIcon,
     primaryState,
     button,
@@ -357,6 +359,9 @@ async function refresh() {
     const dewinHistoryRequest = fetch('/api/dewin/history', { cache: 'no-store' })
       .then(async (response) => (response.ok ? response.json() : null))
       .catch(() => null);
+    const hardwareRequest = fetch('/api/hardware', { cache: 'no-store' })
+      .then(async (hardwareResponse) => (hardwareResponse.ok ? hardwareResponse.json() : null))
+      .catch(() => null);
     const response = await fetch('/api/devices', { cache: 'no-store' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const payload = await response.json();
@@ -368,6 +373,8 @@ async function refresh() {
     if (dewin) latestDewin = dewin;
     const dewinHistory = await dewinHistoryRequest;
     if (dewinHistory) latestDewinHistory = dewinHistory;
+    const hardware = await hardwareRequest;
+    if (hardware) latestHardware = hardware;
     renderTemperatureChart(temperatureChartElement, latestDewinHistory, latestDewin);
     renderDevices(latestDevices);
     const functions = buildDashboardFunctions(payload.devices);
