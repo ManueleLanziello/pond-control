@@ -59,8 +59,10 @@
       <input id="hardware-id" type="hidden"><input id="hardware-kind" type="hidden">
       <label>Alias<input id="hardware-alias" name="alias" required></label>
       <label>Modello / tipo<input id="hardware-model" name="model" required></label>
-      <label>Indirizzo IP<input id="hardware-ip" name="ip" inputmode="decimal" required></label>
-      <label>Indirizzo MAC<input id="hardware-mac" name="mac" placeholder="AA:BB:CC:DD:EE:FF" required></label>
+      <label id="hardware-connection-field">Connessione<select id="hardware-connection" name="connectionType"><option value="lan">LAN</option><option value="cloud">Cloud</option></select></label>
+      <label id="hardware-provider-field">Protocollo / provider<input id="hardware-provider" name="provider"></label>
+      <label id="hardware-ip-field">Indirizzo IP<input id="hardware-ip" name="ip" inputmode="decimal"></label>
+      <label id="hardware-mac-field">Indirizzo MAC<input id="hardware-mac" name="mac" placeholder="AA:BB:CC:DD:EE:FF"></label>
       <label>Ruolo<select id="hardware-role" name="role"></select></label>
       <p id="hardware-form-status" class="status-message" aria-live="polite"></p>
       <div class="hardware-form-actions">

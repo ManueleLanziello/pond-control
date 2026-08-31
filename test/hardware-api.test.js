@@ -7,11 +7,11 @@ import { devices } from '../devices.js';
 import { createPondServer } from '../server.js';
 import { defaultHardwareRegistry, HardwareRegistryStore } from '../src/hardware-registry.js';
 
-async function withHardwareApi(callback) {
+async function withHardwareApi(callback, { dewinConfigured = false, dewinSnapshot = null } = {}) {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'pond-hardware-api-'));
   const hardwareStore = new HardwareRegistryStore({
     filePath: path.join(directory, 'hardware.json'),
-    defaults: defaultHardwareRegistry({ deviceList: devices, cameraIp: '192.168.1.11' }),
+    defaults: defaultHardwareRegistry({ deviceList: devices, cameraIp: '192.168.1.11', dewinConfigured }),
     idFactory: () => 'sensor-generated',
   });
   const assignments = { 'tapo-p105-pond': 'pump', 'tapo-p100m-pond': 'heater' };
@@ -38,7 +38,13 @@ async function withHardwareApi(callback) {
     id: device.id, name: device.fallbackName, model: device.model, ip: device.ip,
     protocol: device.protocolLabel, online: true, state: 'OFF', rssi: -55,
   })) };
-  const server = createPondServer({ hardwareStore, roleStore, deviceManager, verifyPlug, verifyCamera, logDeviceStatus: () => {} });
+  const dewinService = {
+    snapshot: () => dewinSnapshot || ({ available: false, online: false }),
+    history: async () => ({ samples: [] }), start: async () => {}, stop: () => {},
+  };
+  const server = createPondServer({
+    hardwareStore, roleStore, deviceManager, verifyPlug, verifyCamera, dewinService, logDeviceStatus: () => {},
+  });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
   try { await callback({ baseUrl, hardwareStore, assignments, verificationCalls }); }
@@ -69,6 +75,17 @@ test('first hardware API read bootstraps the missing file and preserves runtime 
     assert.deepEqual(payload.roles.sensors, ['none', 'pond_temperature', 'external_temperature']);
     assert.deepEqual(payload.roles.cameras, ['none', 'pond_camera']);
   });
+});
+
+test('hardware API represents configured Dewin role and current DewinService status', async () => {
+  await withHardwareApi(async ({ baseUrl }) => {
+    const payload = await (await fetch(`${baseUrl}/api/hardware`)).json();
+    assert.deepEqual(payload.sensors.map(({ id, role, connectionType, online, configurationStatus }) => ({
+      id, role, connectionType, online, configurationStatus,
+    })), [{
+      id: 'dewin-pond', role: 'pond_temperature', connectionType: 'cloud', online: true, configurationStatus: 'complete',
+    }]);
+  }, { dewinConfigured: true, dewinSnapshot: { available: true, online: true } });
 });
 
 test('registry-only plug cannot take pump or heater from runtime devices', async () => {

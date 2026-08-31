@@ -65,7 +65,10 @@ function hardwareCard(kind, device) {
   const heading = document.createElement('div'); heading.className = 'hardware-card-heading';
   const identity = document.createElement('div');
   const alias = document.createElement('h3'); alias.textContent = device.alias;
-  const model = document.createElement('p'); model.textContent = device.model;
+  const model = document.createElement('p');
+  model.textContent = kind === 'sensors'
+    ? `${device.type}${device.provider ? ` · ${device.provider}` : ''}`
+    : device.model;
   identity.append(alias, model);
   const verification = document.createElement('span'); verification.className = `hardware-badge is-${device.verificationStatus}`;
   verification.textContent = device.verificationStatus === 'verified' ? 'VERIFICATA' : 'DA VERIFICARE';
@@ -74,14 +77,17 @@ function hardwareCard(kind, device) {
   role.append(roleOptions(kind, device.role || 'none', device));
   role.addEventListener('change', () => updateRole(kind, device, role.value).catch(showError));
   const details = document.createElement('div'); details.className = 'hardware-details';
-  details.append(
-    textRow('IP', device.ip, 'mono'), textRow('MAC', device.mac || 'Non configurato', 'mono'),
-    textRow('Protocollo', device.protocol),
-    textRow('Connessione', device.online ? 'ONLINE' : 'OFFLINE', device.online ? 'online-text' : 'offline-text'),
-    textRow('RSSI', typeof device.rssi === 'number' ? `${device.rssi} dBm` : 'Non disponibile'),
+  const statusRow = textRow('Stato', device.online ? 'ONLINE' : 'OFFLINE', device.online ? 'online-text' : 'offline-text');
+  const connectionRows = kind === 'sensors' && device.connectionType === 'cloud'
+    ? [textRow('Connessione', 'CLOUD'), statusRow]
+    : [
+      textRow('IP', device.ip, 'mono'), textRow('MAC', device.mac || 'Non configurato', 'mono'),
+      textRow('Protocollo', device.protocol), statusRow,
+      textRow('RSSI', typeof device.rssi === 'number' ? `${device.rssi} dBm` : 'Non disponibile'),
+    ];
+  details.append(...connectionRows,
     textRow('Configurazione', device.configurationStatus === 'complete' ? 'COMPLETA' : 'INCOMPLETA'),
-    ...(kind === 'plugs' ? [textRow('Runtime', device.runtimeSupported ? 'OPERATIVA' : 'NON ATTIVA')] : []),
-  );
+    ...(kind === 'plugs' ? [textRow('Runtime', device.runtimeSupported ? 'OPERATIVA' : 'NON ATTIVA')] : []));
   const actions = document.createElement('div'); actions.className = 'settings-card-actions';
   actions.append(
     actionButton('Modifica', () => openForm(kind, device)),
@@ -110,11 +116,27 @@ async function loadHardware(message = 'Configurazione pronta') {
 
 function formPayload() {
   const kind = document.querySelector('#hardware-kind').value;
+  const connectionType = kind === 'sensors' ? document.querySelector('#hardware-connection').value : 'lan';
+  const provider = document.querySelector('#hardware-provider').value.trim();
+  const modelOrType = document.querySelector('#hardware-model').value.trim();
   return {
-    alias: document.querySelector('#hardware-alias').value.trim(), model: document.querySelector('#hardware-model').value.trim(),
+    alias: document.querySelector('#hardware-alias').value.trim(),
+    model: kind === 'sensors' ? '' : modelOrType, ...(kind === 'sensors' ? { type: modelOrType } : {}),
     ip: document.querySelector('#hardware-ip').value.trim(), mac: document.querySelector('#hardware-mac').value.trim(),
-    protocol: PROTOCOLS[kind], role: document.querySelector('#hardware-role').value,
+    connectionType, provider,
+    protocol: kind === 'sensors' ? provider || 'none' : PROTOCOLS[kind], role: document.querySelector('#hardware-role').value,
   };
+}
+
+function updateConnectionFields() {
+  const kind = document.querySelector('#hardware-kind').value;
+  const cloud = kind === 'sensors' && document.querySelector('#hardware-connection').value === 'cloud';
+  document.querySelector('#hardware-connection-field').hidden = kind !== 'sensors';
+  document.querySelector('#hardware-provider-field').hidden = kind !== 'sensors';
+  document.querySelector('#hardware-ip-field').hidden = cloud;
+  document.querySelector('#hardware-mac-field').hidden = cloud;
+  document.querySelector('#hardware-ip').required = !cloud;
+  document.querySelector('#hardware-mac').required = !cloud;
 }
 
 function openForm(kind, device = null) {
@@ -122,8 +144,12 @@ function openForm(kind, device = null) {
   document.querySelector('#hardware-kind').value = kind; document.querySelector('#hardware-id').value = device?.id || '';
   document.querySelector('#hardware-form-kind').textContent = KIND_LABELS[kind];
   document.querySelector('#hardware-form-title').textContent = device ? `Modifica ${device.alias}` : `Aggiungi ${KIND_LABELS[kind].toLowerCase()}`;
-  document.querySelector('#hardware-alias').value = device?.alias || ''; document.querySelector('#hardware-model').value = device?.model || '';
+  document.querySelector('#hardware-alias').value = device?.alias || '';
+  document.querySelector('#hardware-model').value = kind === 'sensors' ? device?.type || device?.model || '' : device?.model || '';
   document.querySelector('#hardware-ip').value = device?.ip || ''; document.querySelector('#hardware-mac').value = device?.mac || '';
+  document.querySelector('#hardware-connection').value = device?.connectionType || 'lan';
+  document.querySelector('#hardware-provider').value = device?.provider || (kind === 'sensors' ? device?.protocol || '' : '');
+  updateConnectionFields();
   const role = document.querySelector('#hardware-role');
   role.replaceChildren(roleOptions(kind, device?.role || 'none', { runtimeSupported: Boolean(device?.runtimeSupported) }));
   formStatus.className = 'status-message';
@@ -175,6 +201,7 @@ async function removeDevice(kind, device) {
 document.querySelectorAll('[data-add-kind]').forEach((button) => button.addEventListener('click', () => openForm(button.dataset.addKind)));
 document.querySelector('[data-close-dialog]').addEventListener('click', () => dialog.close());
 document.querySelector('#hardware-verify').addEventListener('click', verifyForm);
+document.querySelector('#hardware-connection').addEventListener('change', updateConnectionFields);
 form.addEventListener('input', () => {
   if (adding && document.querySelector('#hardware-kind').value !== 'sensors') { formVerified = false; saveButton.disabled = true; }
 });

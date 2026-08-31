@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -35,6 +35,40 @@ test('missing hardware file is bootstrapped atomically with current plugs and ca
     ]);
     assert.deepEqual(JSON.parse(await readFile(filePath, 'utf8')), registry);
   });
+});
+
+test('bootstrap includes configured Dewin as a complete cloud sensor without secrets or invented network identity', () => {
+  const registry = defaultHardwareRegistry({
+    deviceList: devices, cameraIp: '192.168.1.11', dewinConfigured: true,
+  });
+  assert.deepEqual(registry.sensors, [{
+    id: 'dewin-pond', alias: 'Dewin Pond', model: '', type: 'Sensore temperatura con sonda esterna',
+    ip: '', mac: '', protocol: 'tuya-cloud', connectionType: 'cloud', provider: 'Tuya Cloud',
+    role: 'pond_temperature', configurationStatus: 'complete', verificationStatus: 'verified',
+    verifiedAt: null, detected: { provider: 'Tuya Cloud' },
+  }]);
+  const serialized = JSON.stringify(registry);
+  assert.doesNotMatch(serialized, /client.?secret|client.?id|password|token|credential|device.?id/i);
+});
+
+test('existing version 1 registry receives Dewin through a one-time migration', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'pond-hardware-migration-'));
+  const filePath = path.join(directory, 'hardware.json');
+  const oldRegistry = defaultHardwareRegistry({ deviceList: devices, cameraIp: '192.168.1.11' });
+  await writeFile(filePath, JSON.stringify({ ...oldRegistry, version: 1, sensors: [] }));
+  const store = new HardwareRegistryStore({
+    filePath,
+    defaults: defaultHardwareRegistry({ deviceList: devices, cameraIp: '192.168.1.11', dewinConfigured: true }),
+  });
+  try {
+    const migrated = await store.read();
+    assert.equal(migrated.version, 2);
+    assert.equal(migrated.sensors[0].id, 'dewin-pond');
+    assert.equal(JSON.parse(await readFile(filePath, 'utf8')).sensors[0].role, 'pond_temperature');
+    await store.update('sensors', 'dewin-pond', { role: 'none' });
+    await store.remove('sensors', 'dewin-pond');
+    assert.equal((await store.read()).sensors.length, 0);
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
 test('IPv4 and MAC validation accepts normalized values and rejects malformed input', () => {
@@ -76,6 +110,33 @@ test('create persists records and physical edits reset verification', async () =
     assert.equal((await store.read()).sensors[0].verificationStatus, 'verified');
     await store.update('sensors', created.id, { ip: '192.168.1.26' });
     assert.equal((await store.read()).sensors[0].verificationStatus, 'pending');
+  });
+});
+
+test('cloud sensors require neither IP nor MAC while LAN sensors still do', () => {
+  const cloud = validateHardwareRegistry({ plugs: [], cameras: [], sensors: [{
+    id: 'cloud', alias: 'Cloud probe', type: 'Temperatura', ip: '', mac: '',
+    protocol: 'tuya-cloud', provider: 'Tuya Cloud', connectionType: 'cloud', role: 'pond_temperature',
+  }] });
+  assert.equal(cloud.sensors[0].configurationStatus, 'complete');
+  assert.throws(() => validateHardwareRegistry({ plugs: [], cameras: [], sensors: [{
+    id: 'lan', alias: 'LAN probe', type: 'Temperatura', ip: '', mac: '',
+    protocol: 'local', connectionType: 'lan', role: 'none',
+  }] }), /IPv4/);
+});
+
+test('successful verification acquires and normalizes a missing MAC but rejects a mismatch', async () => {
+  await withStore(async ({ store }) => {
+    const verified = await store.markVerified('plugs', 'tapo-p105-pond', {
+      model: 'P105', mac: '98-03-8E-9C-0C-AF', online: true,
+    }, '2026-08-31T12:00:00.000Z');
+    assert.equal(verified.mac, '98:03:8E:9C:0C:AF');
+    assert.equal(verified.detected.mac, '98:03:8E:9C:0C:AF');
+    assert.equal(verified.configurationStatus, 'complete');
+    await assert.rejects(store.markVerified('plugs', 'tapo-p105-pond', {
+      model: 'P105', mac: '3C-6A-D2-79-F0-D7', online: true,
+    }), (error) => error.code === 'MAC_MISMATCH');
+    assert.equal((await store.read()).plugs[0].mac, '98:03:8E:9C:0C:AF');
   });
 });
 

@@ -98,6 +98,14 @@ function credentialsFromEnvironment() {
   return { username, password };
 }
 
+function dewinConfiguredFromEnvironment() {
+  return Boolean(
+    process.env.TUYA_CLIENT_ID?.trim()
+    && process.env.TUYA_CLIENT_SECRET?.trim()
+    && process.env.TUYA_DEVICE_ID?.trim(),
+  );
+}
+
 export function createConfiguredClient(device) {
   const credentials = credentialsFromEnvironment();
   const options = {
@@ -196,7 +204,9 @@ export function createPondServer({
   cameraManager = UNAVAILABLE_CAMERA_MANAGER,
   hardwareStore = new HardwareRegistryStore({
     filePath: DEFAULT_HARDWARE_FILE,
-    defaults: defaultHardwareRegistry({ deviceList, cameraIp: process.env.TAPO_CAMERA_IP }),
+    defaults: defaultHardwareRegistry({
+      deviceList, cameraIp: process.env.TAPO_CAMERA_IP, dewinConfigured: dewinConfiguredFromEnvironment(),
+    }),
   }),
   verifyPlug = (candidate) => verifyTapoPlug(candidate, {
     ...credentialsFromEnvironment(), timeout: Number(process.env.TAPO_DEVICE_TIMEOUT_MS || 5000),
@@ -324,6 +334,7 @@ export function createPondServer({
         }
         const [registry, assignments] = await Promise.all([hardwareStore.read(), roleStore.read()]);
         const livePlugs = new Map(deviceManager.snapshots().map((device) => [device.id, device]));
+        const dewin = dewinService.snapshot();
         sendJson(response, 200, {
           plugs: registry.plugs.map((plug) => ({
             ...plug,
@@ -333,7 +344,11 @@ export function createPondServer({
             rssi: livePlugs.get(plug.id)?.rssi ?? null,
             state: livePlugs.get(plug.id)?.state ?? null,
           })),
-          sensors: registry.sensors.map((sensor) => ({ ...sensor, online: false, rssi: null })),
+          sensors: registry.sensors.map((sensor) => ({
+            ...sensor,
+            online: sensor.id === 'dewin-pond' ? Boolean(dewin.available && dewin.online) : false,
+            rssi: null,
+          })),
           cameras: registry.cameras.map((camera) => ({
             ...camera, online: camera.verificationStatus === 'verified', rssi: null,
           })),
@@ -504,7 +519,11 @@ if (isMain) {
     const roleStore = new DeviceRoleStore({ filePath: DEFAULT_ROLE_FILE, deviceList: defaultDevices });
     const hardwareStore = new HardwareRegistryStore({
       filePath: DEFAULT_HARDWARE_FILE,
-      defaults: defaultHardwareRegistry({ deviceList: defaultDevices, cameraIp: process.env.TAPO_CAMERA_IP }),
+      defaults: defaultHardwareRegistry({
+        deviceList: defaultDevices,
+        cameraIp: process.env.TAPO_CAMERA_IP,
+        dewinConfigured: dewinConfiguredFromEnvironment(),
+      }),
     });
     await hardwareStore.read();
     const deviceManager = new DeviceManager({

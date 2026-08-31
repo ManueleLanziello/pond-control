@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import test from 'node:test';
-import { CameraManager, CAMERA_SAFETY_TIMEOUT_MS } from '../src/camera-manager.js';
+import { CameraManager, CAMERA_SAFETY_TIMEOUT_MS, defaultCameraPython } from '../src/camera-manager.js';
 
 class FakeWorker extends EventEmitter {
   constructor() {
@@ -19,6 +19,16 @@ class FakeWorker extends EventEmitter {
     return true;
   }
 }
+
+test('camera Python selection prefers environment, then local venv, then compatible fallback', () => {
+  const root = path.join('C:', 'pond-control');
+  assert.equal(defaultCameraPython(root, {
+    env: { TAPO_CAMERA_PYTHON: 'C:\\Python\\python.exe' }, platform: 'win32', pathExists: () => true,
+  }), 'C:\\Python\\python.exe');
+  const local = defaultCameraPython(root, { env: {}, platform: 'win32', pathExists: () => true });
+  assert.equal(local, path.join(root, '.venv-camera', 'Scripts', 'python.exe'));
+  assert.equal(defaultCameraPython(root, { env: {}, platform: 'win32', pathExists: () => false }), 'python');
+});
 
 test('camera manager opens only one worker and stops it through the stop signal', async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'pond-camera-manager-'));

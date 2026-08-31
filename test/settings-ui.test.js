@@ -60,3 +60,12 @@ test('settings does not offer operational roles to registry-only plugs', async (
   assert.match(script, /device\.runtimeSupported \? 'OPERATIVA' : 'NON ATTIVA'/);
   assert.match(script, /non può ricevere un ruolo operativo finché non è supportata dal runtime/);
 });
+
+test('cloud sensor cards show provider and cloud status without IP or MAC rows', async () => {
+  const script = await readFile(new URL('../public/settings.js', import.meta.url), 'utf8');
+  const card = script.slice(script.indexOf('function hardwareCard'), script.indexOf('function renderKind'));
+  assert.match(card, /`\$\{device\.type\}\$\{device\.provider \? ` · \$\{device\.provider\}` : ''\}`/);
+  assert.match(card, /kind === 'sensors' && device\.connectionType === 'cloud'/);
+  assert.match(card, /textRow\('Connessione', 'CLOUD'\)/);
+  assert.match(card, /\? \[textRow\('Connessione', 'CLOUD'\), statusRow\]\s*: \[/);
+});

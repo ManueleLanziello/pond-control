@@ -6,6 +6,7 @@ import path from 'node:path';
 export const HARDWARE_KINDS = Object.freeze(['plugs', 'sensors', 'cameras']);
 export const SENSOR_ROLES = Object.freeze(['none', 'pond_temperature', 'external_temperature']);
 export const CAMERA_ROLES = Object.freeze(['none', 'pond_camera']);
+const HARDWARE_REGISTRY_VERSION = 2;
 const MAC_PATTERN = /^(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}$/i;
 
 export class HardwareRegistryError extends Error {
@@ -42,19 +43,26 @@ function allowedRoles(kind) {
 
 function normalizeRecord(kind, input, { allowIncomplete = false } = {}) {
   const alias = requiredText(input.alias, 'alias');
-  const model = requiredText(input.model || input.type, kind === 'sensors' ? 'tipo' : 'modello');
-  const ip = validateIpv4(input.ip);
+  const connectionType = kind === 'sensors' ? String(input.connectionType || 'lan').toLowerCase() : 'lan';
+  if (!['lan', 'cloud'].includes(connectionType)) {
+    throw new HardwareRegistryError('Tipo di connessione non valido.', 'INVALID_CONNECTION_TYPE');
+  }
+  const type = kind === 'sensors' ? requiredText(input.type || input.model, 'tipo') : undefined;
+  const model = kind === 'sensors' ? String(input.model || '').trim() : requiredText(input.model, 'modello');
+  const ip = connectionType === 'cloud' && !input.ip ? '' : validateIpv4(input.ip);
   let mac = '';
-  if (input.mac || !allowIncomplete) mac = normalizeMac(input.mac);
+  if (input.mac || (!allowIncomplete && connectionType === 'lan')) mac = normalizeMac(input.mac);
   const protocol = requiredText(input.protocol || (kind === 'plugs' ? 'tpap' : kind === 'cameras' ? 'pytapo-https' : 'none'), 'protocollo');
+  const provider = kind === 'sensors' ? String(input.provider || '').trim() : undefined;
   const role = kind === 'plugs' ? undefined : String(input.role || 'none');
   if (role !== undefined && !allowedRoles(kind).includes(role)) {
     throw new HardwareRegistryError('Ruolo non valido.', 'INVALID_ROLE');
   }
   return {
-    id: requiredText(input.id, 'id'), alias, model, ip, mac, protocol,
+    id: requiredText(input.id, 'id'), alias, model, ...(type === undefined ? {} : { type }), ip, mac, protocol,
+    ...(kind === 'sensors' ? { connectionType, provider } : {}),
     ...(role === undefined ? {} : { role }),
-    configurationStatus: mac ? 'complete' : 'incomplete',
+    configurationStatus: connectionType === 'cloud' || mac ? 'complete' : 'incomplete',
     verificationStatus: input.verificationStatus === 'verified' ? 'verified' : 'pending',
     verifiedAt: input.verificationStatus === 'verified' ? input.verifiedAt || null : null,
     detected: input.verificationStatus === 'verified' ? input.detected || null : null,
@@ -69,13 +77,13 @@ function validateCollection(kind, records, options) {
   const roles = new Set();
   for (const record of normalized) {
     if (ids.has(record.id)) throw new HardwareRegistryError('ID dispositivo duplicato.', 'DUPLICATE_ID');
-    if (ips.has(record.ip)) throw new HardwareRegistryError('Indirizzo IP già configurato.', 'DUPLICATE_IP');
+    if (record.ip && ips.has(record.ip)) throw new HardwareRegistryError('Indirizzo IP già configurato.', 'DUPLICATE_IP');
     if (record.mac && macs.has(record.mac)) throw new HardwareRegistryError('Indirizzo MAC già configurato.', 'DUPLICATE_MAC');
     if (record.role && record.role !== 'none' && roles.has(record.role)) {
       throw new HardwareRegistryError('Ruolo già assegnato.', 'DUPLICATE_ROLE');
     }
     ids.add(record.id);
-    ips.add(record.ip);
+    if (record.ip) ips.add(record.ip);
     if (record.mac) macs.add(record.mac);
     if (record.role && record.role !== 'none') roles.add(record.role);
   }
@@ -85,7 +93,7 @@ function validateCollection(kind, records, options) {
 export function validateHardwareRegistry(value, options = {}) {
   if (!value || typeof value !== 'object') throw new HardwareRegistryError('Registro hardware non valido.');
   const registry = {
-    version: 1,
+    version: HARDWARE_REGISTRY_VERSION,
     plugs: validateCollection('plugs', value.plugs || [], options),
     sensors: validateCollection('sensors', value.sensors || [], options),
     cameras: validateCollection('cameras', value.cameras || [], options),
@@ -96,16 +104,16 @@ export function validateHardwareRegistry(value, options = {}) {
   const macs = new Set();
   for (const record of all) {
     if (ids.has(record.id)) throw new HardwareRegistryError('ID dispositivo duplicato.', 'DUPLICATE_ID');
-    if (ips.has(record.ip)) throw new HardwareRegistryError('Indirizzo IP già configurato.', 'DUPLICATE_IP');
+    if (record.ip && ips.has(record.ip)) throw new HardwareRegistryError('Indirizzo IP già configurato.', 'DUPLICATE_IP');
     if (record.mac && macs.has(record.mac)) throw new HardwareRegistryError('Indirizzo MAC già configurato.', 'DUPLICATE_MAC');
     ids.add(record.id);
-    ips.add(record.ip);
+    if (record.ip) ips.add(record.ip);
     if (record.mac) macs.add(record.mac);
   }
   return registry;
 }
 
-export function defaultHardwareRegistry({ deviceList, cameraIp }) {
+export function defaultHardwareRegistry({ deviceList, cameraIp, dewinConfigured = false }) {
   return validateHardwareRegistry({
     plugs: deviceList.map((device) => ({
       id: device.id,
@@ -115,7 +123,12 @@ export function defaultHardwareRegistry({ deviceList, cameraIp }) {
       mac: '',
       protocol: device.protocol,
     })),
-    sensors: [],
+    sensors: dewinConfigured ? [{
+      id: 'dewin-pond', alias: 'Dewin Pond', type: 'Sensore temperatura con sonda esterna',
+      model: '', ip: '', mac: '', protocol: 'tuya-cloud', provider: 'Tuya Cloud',
+      connectionType: 'cloud', role: 'pond_temperature', verificationStatus: 'verified',
+      detected: { provider: 'Tuya Cloud' },
+    }] : [],
     cameras: cameraIp ? [{
       id: 'tapo-c410-pond', alias: 'C410 Pond', model: 'C410', ip: cameraIp,
       mac: '', protocol: 'pytapo-https', role: 'pond_camera',
@@ -134,7 +147,18 @@ export class HardwareRegistryStore {
 
   async read() {
     try {
-      return validateHardwareRegistry(JSON.parse(await readFile(this.filePath, 'utf8')), { allowIncomplete: true });
+      const parsed = JSON.parse(await readFile(this.filePath, 'utf8'));
+      const registry = validateHardwareRegistry(parsed, { allowIncomplete: true });
+      if (Number(parsed.version || 1) < HARDWARE_REGISTRY_VERSION) {
+        const defaultDewin = this.defaults.sensors.find((sensor) => sensor.id === 'dewin-pond');
+        if (defaultDewin && !registry.sensors.some((sensor) => sensor.id === defaultDewin.id)) {
+          registry.sensors.push(structuredClone(defaultDewin));
+        }
+        const migrated = validateHardwareRegistry(registry, { allowIncomplete: true });
+        await this.#persist(migrated);
+        return migrated;
+      }
+      return registry;
     } catch (error) {
       if (error.code === 'ENOENT') return this.#bootstrap();
       throw error;
@@ -144,14 +168,7 @@ export class HardwareRegistryStore {
   #bootstrap() {
     if (!this.bootstrapPromise) {
       this.bootstrapPromise = (async () => {
-        await mkdir(path.dirname(this.filePath), { recursive: true });
-        const temporaryPath = `${this.filePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
-        await writeFile(temporaryPath, `${JSON.stringify(this.defaults, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
-        try {
-          await rename(temporaryPath, this.filePath);
-        } catch (error) {
-          if (error.code !== 'EEXIST' && error.code !== 'EPERM') throw error;
-        }
+        await this.#persist(this.defaults);
         return structuredClone(this.defaults);
       })();
     }
@@ -171,7 +188,8 @@ export class HardwareRegistryStore {
       const index = registry[kind].findIndex((record) => record.id === id);
       if (index < 0) throw new HardwareRegistryError('Dispositivo non trovato.', 'NOT_FOUND');
       const previous = registry[kind][index];
-      const physicalChanged = ['ip', 'mac', 'model'].some((field) => input[field] !== undefined && input[field] !== previous[field]);
+      const physicalChanged = ['ip', 'mac', 'model', 'type', 'connectionType', 'protocol']
+        .some((field) => input[field] !== undefined && input[field] !== previous[field]);
       registry[kind][index] = normalizeRecord(kind, {
         ...previous, ...input, id,
         verificationStatus: physicalChanged ? 'pending' : previous.verificationStatus,
@@ -186,6 +204,15 @@ export class HardwareRegistryStore {
     return this.#mutate(async (registry) => {
       const record = registry[kind].find((candidate) => candidate.id === id);
       if (!record) throw new HardwareRegistryError('Dispositivo non trovato.', 'NOT_FOUND');
+      if (detected?.mac) {
+        const detectedMac = normalizeMac(detected.mac);
+        if (record.mac && normalizeMac(record.mac) !== detectedMac) {
+          throw new HardwareRegistryError('Il MAC rilevato non corrisponde alla configurazione.', 'MAC_MISMATCH');
+        }
+        record.mac = detectedMac;
+        detected = { ...detected, mac: detectedMac };
+      }
+      record.configurationStatus = record.connectionType === 'cloud' || record.mac ? 'complete' : 'incomplete';
       record.verificationStatus = 'verified';
       record.verifiedAt = now;
       record.detected = detected;
@@ -210,13 +237,17 @@ export class HardwareRegistryStore {
       const registry = await this.read();
       const result = await operation(registry);
       const validated = validateHardwareRegistry(registry, { allowIncomplete: true });
-      await mkdir(path.dirname(this.filePath), { recursive: true });
-      const temporaryPath = `${this.filePath}.tmp`;
-      await writeFile(temporaryPath, `${JSON.stringify(validated, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
-      await rename(temporaryPath, this.filePath);
+      await this.#persist(validated);
       return structuredClone(result);
     });
     this.writeQueue = pending.catch(() => {});
     return pending;
+  }
+
+  async #persist(registry) {
+    await mkdir(path.dirname(this.filePath), { recursive: true });
+    const temporaryPath = `${this.filePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
+    await writeFile(temporaryPath, `${JSON.stringify(registry, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
+    await rename(temporaryPath, this.filePath);
   }
 }

@@ -15,12 +15,14 @@ export class CameraControlError extends Error {
   }
 }
 
-export function defaultCameraPython(root) {
-  if (process.env.TAPO_CAMERA_PYTHON?.trim()) return process.env.TAPO_CAMERA_PYTHON.trim();
-  const localPython = process.platform === 'win32'
+export function defaultCameraPython(root, {
+  env = process.env, platform = process.platform, pathExists = existsSync,
+} = {}) {
+  if (env.TAPO_CAMERA_PYTHON?.trim()) return env.TAPO_CAMERA_PYTHON.trim();
+  const localPython = platform === 'win32'
     ? path.join(root, '.venv-camera', 'Scripts', 'python.exe')
     : path.join(root, '.venv-camera', 'bin', 'python');
-  return existsSync(localPython) ? localPython : 'python';
+  return pathExists(localPython) ? localPython : 'python';
 }
 
 export class CameraManager {
