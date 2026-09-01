@@ -213,6 +213,7 @@ body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 12% 0
 .hardware-dialog::backdrop { background: rgba(2,7,10,.78); backdrop-filter: blur(4px); }
 .hardware-dialog form { display: grid; gap: 16px; padding: 24px; }
 .hardware-dialog label { display: grid; gap: 7px; color: #9db0aa; font-size: .78rem; font-weight: 750; }
+.hardware-dialog [hidden] { display: none; }
 .hardware-dialog input, .hardware-dialog select { min-height: 46px; border: 1px solid rgba(164,206,190,.22); border-radius: 11px; padding: 0 12px; background: #111d21; color: #eef7f3; font: inherit; }
 .dialog-close { width: 44px; padding: 0; font-size: 1.5rem; }
 .hardware-form-actions { display: flex; justify-content: flex-end; gap: 10px; }

@@ -122,18 +122,21 @@ async function loadHardware(message = 'Configurazione pronta') {
 
 function formPayload() {
   const kind = document.querySelector('#hardware-kind').value;
-  const connectionType = kind === 'sensors' ? document.querySelector('#hardware-connection').value : 'lan';
-  const provider = document.querySelector('#hardware-provider').value.trim();
   const modelOrType = (kind === 'plugs'
     ? document.querySelector('#hardware-model').value
     : document.querySelector('#hardware-model-text').value).trim();
-  return {
+  const common = {
     alias: document.querySelector('#hardware-alias').value.trim(),
     model: kind === 'sensors' ? '' : modelOrType, ...(kind === 'sensors' ? { type: modelOrType } : {}),
     ip: document.querySelector('#hardware-ip').value.trim(), mac: document.querySelector('#hardware-mac').value.trim(),
-    connectionType, provider,
-    protocol: kind === 'sensors' ? editingDevice?.protocol || provider || 'none' : PROTOCOLS[kind],
     role: document.querySelector('#hardware-role').value,
+  };
+  if (kind === 'plugs') return common;
+  const connectionType = kind === 'sensors' ? document.querySelector('#hardware-connection').value : 'lan';
+  const provider = document.querySelector('#hardware-provider').value.trim();
+  return {
+    ...common, connectionType, provider,
+    protocol: kind === 'sensors' ? editingDevice?.protocol || provider || 'none' : PROTOCOLS[kind],
   };
 }
 

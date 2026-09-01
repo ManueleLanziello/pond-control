@@ -48,12 +48,21 @@ test('settings cards show hardware identity, connection and verification data', 
 });
 
 test('settings saves new plugs inactive and offers read-only verification after persistence', async () => {
-  const [page, script] = await Promise.all([
+  const [page, script, style] = await Promise.all([
     readFile(new URL('../public/settings.html', import.meta.url), 'utf8'),
     readFile(new URL('../public/settings.js', import.meta.url), 'utf8'),
+    readFile(new URL('../public/style.css', import.meta.url), 'utf8'),
   ]);
   assert.match(page, /<select id="hardware-model"/);
+  for (const field of ['hardware-alias', 'hardware-model', 'hardware-ip', 'hardware-mac', 'hardware-role']) {
+    assert.match(page, new RegExp(`id="${field}"`));
+  }
   assert.match(script, /hardware\.supportedPlugModels/);
+  assert.match(script, /if \(kind === 'plugs'\) return common/);
+  assert.match(script, /hardware-model-text-field'\)\.hidden = kind === 'plugs'/);
+  assert.match(script, /hardware-connection-field'\)\.hidden = kind !== 'sensors'/);
+  assert.match(script, /hardware-provider-field'\)\.hidden = kind !== 'sensors'/);
+  assert.match(style, /\.hardware-dialog \[hidden\]\s*\{\s*display:\s*none/);
   assert.match(script, /hardware-verify'\)\.hidden = cloud \|\| adding/);
   assert.match(script, /saveButton\.disabled = false/);
   assert.doesNotMatch(script, /Verifica sensori? non ancora disponibile/);

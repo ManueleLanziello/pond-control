@@ -73,7 +73,9 @@ function normalizeRecord(kind, input, { allowIncomplete = false } = {}) {
   }
   return {
     id: requiredText(input.id, 'id'), alias, model, ...(type === undefined ? {} : { type }), ip, mac, protocol,
-    ...(plugDefinition ? { manufacturer: plugDefinition.manufacturer, runtimeAdapter: plugDefinition.adapter } : {}),
+    ...(plugDefinition ? {
+      manufacturer: plugDefinition.manufacturer, runtimeAdapter: plugDefinition.adapter, connectionType: 'lan',
+    } : {}),
     ...(kind === 'sensors' ? { connectionType, provider } : {}),
     ...(role === undefined ? {} : { role }),
     configurationStatus: connectionType === 'cloud' || mac ? 'complete' : 'incomplete',

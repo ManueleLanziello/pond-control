@@ -197,6 +197,9 @@ test('new supported plug stays inactive and role-less until read-only verificati
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(configured),
     });
     assert.equal(created.response.status, 201);
+    assert.equal(created.payload.device.connectionType, 'lan');
+    assert.equal(created.payload.device.protocol, 'tpap');
+    assert.equal(created.payload.device.runtimeAdapter, 'tpap');
     const id = created.payload.device.id;
     for (const role of ['pump', 'heater']) {
       const attempted = await jsonRequest(baseUrl, `/api/hardware/plugs/${id}`, {
