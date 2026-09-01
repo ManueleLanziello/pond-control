@@ -58,7 +58,8 @@
       </div>
       <input id="hardware-id" type="hidden"><input id="hardware-kind" type="hidden">
       <label>Alias<input id="hardware-alias" name="alias" required></label>
-      <label>Modello / tipo<input id="hardware-model" name="model" required></label>
+      <label id="hardware-model-select-field">Modello<select id="hardware-model" name="model"></select></label>
+      <label id="hardware-model-text-field">Modello / tipo<input id="hardware-model-text" name="modelOrType"></label>
       <label id="hardware-connection-field">Connessione<select id="hardware-connection" name="connectionType"><option value="lan">LAN</option><option value="cloud">Cloud</option></select></label>
       <label id="hardware-provider-field">Protocollo / provider<input id="hardware-provider" name="provider"></label>
       <label id="hardware-ip-field">Indirizzo IP<input id="hardware-ip" name="ip" inputmode="decimal"></label>

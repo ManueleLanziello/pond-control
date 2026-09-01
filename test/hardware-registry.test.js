@@ -62,7 +62,7 @@ test('existing version 1 registry receives Dewin through a one-time migration', 
   });
   try {
     const migrated = await store.read();
-    assert.equal(migrated.version, 2);
+    assert.equal(migrated.version, 3);
     assert.equal(migrated.sensors[0].id, 'dewin-pond');
     assert.equal(JSON.parse(await readFile(filePath, 'utf8')).sensors[0].role, 'pond_temperature');
     await store.update('sensors', 'dewin-pond', { role: 'none' });
@@ -79,7 +79,7 @@ test('IPv4 and MAC validation accepts normalized values and rejects malformed in
 });
 
 test('registry rejects duplicate ids, IPs, MACs and sensor roles', () => {
-  const base = { alias: 'A', model: 'T', protocol: 'none', verificationStatus: 'pending' };
+  const base = { alias: 'A', model: 'P105', protocol: 'none', verificationStatus: 'pending' };
   assert.throws(() => validateHardwareRegistry({
     plugs: [{ ...base, id: 'one', ip: '192.168.1.2', mac: 'AA:BB:CC:DD:EE:01' }],
     sensors: [{ ...base, id: 'two', ip: '192.168.1.2', mac: 'AA:BB:CC:DD:EE:02' }], cameras: [],

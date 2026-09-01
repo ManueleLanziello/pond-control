@@ -14,6 +14,9 @@ async function withHardwareApi(callback, { dewinConfigured = false, dewinSnapsho
     defaults: defaultHardwareRegistry({ deviceList: devices, cameraIp: '192.168.1.11', dewinConfigured }),
     idFactory: () => 'sensor-generated',
   });
+  await hardwareStore.read();
+  await hardwareStore.markVerified('plugs', 'tapo-p105-pond', { model: 'P105', mac: 'AA:BB:CC:DD:EE:05' });
+  await hardwareStore.markVerified('plugs', 'tapo-p100m-pond', { model: 'P100M', mac: 'AA:BB:CC:DD:EE:00' });
   const assignments = { 'tapo-p105-pond': 'pump', 'tapo-p100m-pond': 'heater' };
   const roleStore = {
     read: async () => ({ ...assignments }),
@@ -39,8 +42,11 @@ async function withHardwareApi(callback, { dewinConfigured = false, dewinSnapsho
     verificationCalls.push({ kind: 'camera', configured });
     return { model: configured.model, alias: configured.alias, mac: configured.mac, protocol: 'PyTapo HTTPS', online: true };
   };
+  let runtimeDevices = [...devices];
   const deviceManager = {
-    snapshots: () => devices.map((device) => ({
+    reconcileDevices: (next) => { runtimeDevices = [...next]; },
+    hasDevice: (id) => runtimeDevices.some((device) => device.id === id),
+    snapshots: () => runtimeDevices.map((device) => ({
       id: device.id, name: device.fallbackName, model: device.model, ip: device.ip,
       protocol: device.protocolLabel, online: true, state: states[device.id], rssi: -55,
       communicationDegraded: false, consecutiveFailures: 0, lastReadAt: new Date().toISOString(),
@@ -181,10 +187,10 @@ test('Dewin alias and role edits stay verified and manual verification reuses on
   });
 });
 
-test('registry-only plug cannot take pump or heater from runtime devices', async () => {
+test('new supported plug stays inactive and role-less until read-only verification', async () => {
   await withHardwareApi(async ({ baseUrl, assignments, verificationCalls }) => {
     const configured = {
-      alias: 'Presa futura', model: 'P110', ip: '192.168.1.30', mac: 'AA:BB:CC:DD:EE:30',
+      alias: 'Presa futura', model: 'P105', ip: '192.168.1.30', mac: 'AA:BB:CC:DD:EE:30',
       protocol: 'tpap', role: 'none',
     };
     const created = await jsonRequest(baseUrl, '/api/hardware/plugs', {
@@ -197,14 +203,31 @@ test('registry-only plug cannot take pump or heater from runtime devices', async
         method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role }),
       });
       assert.equal(attempted.response.status, 400);
-      assert.equal(attempted.payload.code, 'RUNTIME_DEVICE_UNSUPPORTED');
+      assert.equal(attempted.payload.code, 'RUNTIME_DEVICE_INACTIVE');
       assert.deepEqual(assignments, { 'tapo-p105-pond': 'pump', 'tapo-p100m-pond': 'heater' });
     }
     const registry = await (await fetch(`${baseUrl}/api/hardware`)).json();
     const future = registry.plugs.find((plug) => plug.id === id);
     assert.equal(future.role, 'none');
-    assert.equal(future.runtimeSupported, false);
+    assert.equal(future.runtimeActive, false);
+    assert.equal(verificationCalls.length, 0);
+    const verified = await jsonRequest(baseUrl, `/api/hardware/plugs/${id}/verify`, { method: 'POST' });
+    assert.equal(verified.response.status, 200);
+    const assigned = await jsonRequest(baseUrl, `/api/hardware/plugs/${id}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role: 'pump' }),
+    });
+    assert.equal(assigned.response.status, 200);
     assert.equal(verificationCalls.length, 1);
+    const blockedRemoval = await jsonRequest(baseUrl, `/api/hardware/plugs/${id}`, { method: 'DELETE' });
+    assert.equal(blockedRemoval.response.status, 400);
+    assert.equal(blockedRemoval.payload.code, 'ROLE_ASSIGNED');
+    await jsonRequest(baseUrl, `/api/hardware/plugs/${id}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role: 'none' }),
+    });
+    const removed = await jsonRequest(baseUrl, `/api/hardware/plugs/${id}`, { method: 'DELETE' });
+    assert.equal(removed.response.status, 200);
+    const afterRemoval = await (await fetch(`${baseUrl}/api/hardware`)).json();
+    assert.equal(afterRemoval.plugs.some((plug) => plug.id === id), false);
   });
 });
 
@@ -258,11 +281,54 @@ test('Settings role swap keeps dashboard identity and role commands on the same 
   });
 });
 
+test('technical replacement preserves role, removes stale runtime, then activates verified replacement', async () => {
+  await withHardwareApi(async ({ baseUrl, assignments, controlWrites }) => {
+    const updated = await jsonRequest(baseUrl, '/api/hardware/plugs/tapo-p100m-pond', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+        alias: 'Presa Tapo P105 nuova', model: 'P105', ip: '192.168.1.6',
+        mac: '18:69:45:C7:DA:2E', role: 'heater', protocol: 'user-value-ignored',
+      }),
+    });
+    assert.equal(updated.response.status, 200);
+    assert.equal(updated.payload.device.verificationStatus, 'pending');
+    assert.equal(updated.payload.device.protocol, 'tpap');
+    assert.equal(assignments['tapo-p100m-pond'], 'heater');
+
+    const pending = await (await fetch(`${baseUrl}/api/hardware`)).json();
+    const pendingPlug = pending.plugs.find(({ id }) => id === 'tapo-p100m-pond');
+    assert.equal(pendingPlug.runtimeActive, false);
+    assert.equal(pendingPlug.online, false);
+    const pendingDashboard = await (await fetch(`${baseUrl}/api/devices`)).json();
+    const pendingHeater = pendingDashboard.devices.find(({ role }) => role === 'heater');
+    assert.equal(pendingHeater.name, 'Presa Tapo P105 nuova');
+    assert.equal(pendingHeater.model, 'P105');
+    assert.equal(pendingHeater.online, false);
+    assert.equal(pendingHeater.runtimeActive, false);
+    const blocked = await jsonRequest(baseUrl, '/api/functions/heater/state', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ state: 'OFF' }),
+    });
+    assert.equal(blocked.response.status, 409);
+    assert.equal(controlWrites.length, 0);
+
+    const verified = await jsonRequest(baseUrl, '/api/hardware/plugs/tapo-p100m-pond/verify', { method: 'POST' });
+    assert.equal(verified.response.status, 200);
+    const active = await (await fetch(`${baseUrl}/api/hardware`)).json();
+    const activePlug = active.plugs.find(({ id }) => id === 'tapo-p100m-pond');
+    assert.equal(activePlug.runtimeActive, true);
+    assert.equal(activePlug.model, 'P105');
+    assert.equal(activePlug.ip, '192.168.1.6');
+    await fetch(`${baseUrl}/api/functions/heater/state`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ state: 'OFF' }),
+    });
+    assert.deepEqual(controlWrites, [['tapo-p100m-pond', false]]);
+  });
+});
+
 test('read-only verification records detected data without any control method', async () => {
   await withHardwareApi(async ({ baseUrl, verificationCalls }) => {
     const { response, payload } = await jsonRequest(baseUrl, '/api/hardware/plugs/verify', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-        alias: 'Presa test', model: 'P110', ip: '192.168.1.30', mac: 'AA:BB:CC:DD:EE:30', protocol: 'tpap', role: 'none',
+        alias: 'Presa test', model: 'P105', ip: '192.168.1.30', mac: 'AA:BB:CC:DD:EE:30', protocol: 'tpap', role: 'none',
       }),
     });
     assert.equal(response.status, 200);

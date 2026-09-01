@@ -47,19 +47,24 @@ test('settings cards show hardware identity, connection and verification data', 
   assert.match(cardSource, /actionButton\('Rimuovi'/);
 });
 
-test('settings requires read-only verification before adding a supported active device', async () => {
-  const script = await readFile(new URL('../public/settings.js', import.meta.url), 'utf8');
-  assert.match(script, /saveButton\.disabled = adding && kind !== 'sensors'/);
-  assert.match(script, /if \(adding && kind !== 'sensors' && !formVerified\) return/);
+test('settings saves new plugs inactive and offers read-only verification after persistence', async () => {
+  const [page, script] = await Promise.all([
+    readFile(new URL('../public/settings.html', import.meta.url), 'utf8'),
+    readFile(new URL('../public/settings.js', import.meta.url), 'utf8'),
+  ]);
+  assert.match(page, /<select id="hardware-model"/);
+  assert.match(script, /hardware\.supportedPlugModels/);
+  assert.match(script, /hardware-verify'\)\.hidden = cloud \|\| adding/);
+  assert.match(script, /saveButton\.disabled = false/);
   assert.doesNotMatch(script, /Verifica sensori? non ancora disponibile/);
   assert.doesNotMatch(script, /\/api\/(?:devices|functions)\/[^'`]*\/(?:on|off|toggle)/i);
 });
 
-test('settings does not offer operational roles to registry-only plugs', async () => {
+test('settings does not offer operational roles to runtime-inactive plugs', async () => {
   const script = await readFile(new URL('../public/settings.js', import.meta.url), 'utf8');
-  assert.match(script, /kind === 'plugs' && !runtimeSupported \? \['none'\]/);
-  assert.match(script, /device\.runtimeSupported \? 'OPERATIVA' : 'NON ATTIVA'/);
-  assert.match(script, /non può ricevere un ruolo operativo finché non è supportata dal runtime/);
+  assert.match(script, /selected === 'none' \? \['none'\] : \[selected, 'none'\]/);
+  assert.match(script, /device\.runtimeActive \? 'OPERATIVA' : 'NON ATTIVA'/);
+  assert.match(script, /completare la verifica read-only prima di assegnare un ruolo operativo/);
 });
 
 test('cloud sensor cards show provider and cloud status without IP or MAC rows', async () => {

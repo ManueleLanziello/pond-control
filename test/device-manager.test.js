@@ -123,3 +123,37 @@ test('pollAll collapses overlapping callers into one hardware cycle', async () =
   release();
   assert.equal(await first, await second);
 });
+
+test('reconcile preserves administrative alias updates without recreating runtime', async () => {
+  const run = createManagerHarness(devices, { states: { 'tapo-p105-pond': true } });
+  await run.manager.read('tapo-p105-pond');
+  const renamed = devices.map((device) => device.id === 'tapo-p105-pond'
+    ? { ...device, fallbackName: 'Nuovo alias amministrativo' } : device);
+  const result = run.manager.reconcileDevices(renamed);
+  assert.deepEqual(result.replaced, []);
+  await run.manager.read('tapo-p105-pond');
+  assert.equal(run.clientCreations.get('tapo-p105-pond'), 1);
+});
+
+test('technical replacement closes and removes stale runtime before activating new config', async () => {
+  const run = createManagerHarness(devices, { states: { 'tapo-p100m-pond': false } });
+  await run.manager.read('tapo-p100m-pond');
+  const replacement = devices.map((device) => device.id === 'tapo-p100m-pond'
+    ? { ...device, model: 'P105', ip: '192.168.1.6' } : device);
+  run.manager.reconcileDevices(replacement.filter(({ id }) => id !== 'tapo-p100m-pond'));
+  assert.equal(run.manager.hasDevice('tapo-p100m-pond'), false);
+  assert.throws(() => run.manager.snapshot('tapo-p100m-pond'), (error) => error.code === 'DEVICE_NOT_FOUND');
+  assert.ok(run.events.some(([event, id]) => event === 'close' && id === 'tapo-p100m-pond'));
+  run.manager.reconcileDevices(replacement);
+  assert.equal(run.manager.snapshot('tapo-p100m-pond').ip, '192.168.1.6');
+  assert.equal(run.manager.snapshot('tapo-p100m-pond').model, 'P105');
+});
+
+test('registry-only runtime can be added and removed without devices.js', () => {
+  const run = createManagerHarness([], {});
+  const plug = { id: 'heater-slot-01', fallbackName: 'Nuova P105', model: 'P105', ip: '192.168.1.6', protocol: 'tpap' };
+  run.manager.registerDevice(plug);
+  assert.equal(run.manager.hasDevice('heater-slot-01'), true);
+  run.manager.removeDevice('heater-slot-01');
+  assert.equal(run.manager.hasDevice('heater-slot-01'), false);
+});

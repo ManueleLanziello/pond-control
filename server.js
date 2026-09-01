@@ -21,6 +21,10 @@ import { createPumpController, PumpControlError } from './src/pump-control.js';
 import { createSafetyMonitor } from './src/safety-monitor.js';
 import { TpapClient } from './src/tpap/client.js';
 import { WeatherService } from './src/weather-service.js';
+import {
+  isRuntimeEligiblePlug, requireSupportedPlugModel, runtimePlugConfiguration, supportedPlugModel,
+  SUPPORTED_PLUG_MODELS,
+} from './src/supported-device-catalog.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 loadEnvFile(path.join(ROOT, '.env'));
@@ -215,7 +219,16 @@ export function createPondServer({
     pythonPath: defaultCameraPython(ROOT), probePath: path.join(ROOT, 'tools', 'c410_probe.py'),
   }),
 } = {}) {
-  const runtimeDeviceIds = new Set(deviceList.map((device) => device.id));
+  async function reconcileRuntime() {
+    const registry = await hardwareStore.read();
+    const runtimeDevices = registry.plugs.filter(isRuntimeEligiblePlug).map(runtimePlugConfiguration);
+    if (typeof deviceManager.reconcileDevices === 'function') deviceManager.reconcileDevices(runtimeDevices);
+    if (typeof roleStore.reconcileDevices === 'function') await roleStore.reconcileDevices(registry.plugs);
+    return registry;
+  }
+  const runtimeHasDevice = (id) => typeof deviceManager.hasDevice === 'function'
+    ? deviceManager.hasDevice(id)
+    : deviceManager.snapshots().some((device) => device.id === id);
   const controlHeater = controlHeaterState || createHeaterController({
     deviceList,
     roleStore,
@@ -276,10 +289,17 @@ export function createPondServer({
           response.end();
           return;
         }
+        const registry = await reconcileRuntime();
         const roleAssignments = await roleStore.read();
-        const result = deviceManager.snapshots().map((device) => ({
-          ...device,
-          role: roleAssignments[device.id] || 'none',
+        const liveDevices = new Map(deviceManager.snapshots().map((device) => [device.id, device]));
+        const result = registry.plugs.map((plug) => ({
+          ...(liveDevices.get(plug.id) || {
+            id: plug.id, name: plug.alias, model: plug.model, ip: plug.ip,
+            type: 'SMART.TAPOPLUG', state: null, rssi: null, protocol: plug.protocol,
+            online: false, communicationDegraded: false, consecutiveFailures: 0, lastReadAt: null,
+          }),
+          role: roleAssignments[plug.id] || 'none',
+          runtimeActive: liveDevices.has(plug.id),
         }));
         sendJson(response, 200, { devices: result });
         return;
@@ -332,7 +352,8 @@ export function createPondServer({
           sendJson(response, 405, { error: 'Metodo non consentito' });
           return;
         }
-        const [registry, assignments] = await Promise.all([hardwareStore.read(), roleStore.read()]);
+        const registry = await reconcileRuntime();
+        const assignments = await roleStore.read();
         const livePlugs = new Map(deviceManager.snapshots().map((device) => [device.id, device]));
         const dewin = dewinService.snapshot();
         for (const sensor of registry.sensors) {
@@ -353,7 +374,8 @@ export function createPondServer({
           plugs: registry.plugs.map((plug) => ({
             ...plug,
             role: assignments[plug.id] || 'none',
-            runtimeSupported: runtimeDeviceIds.has(plug.id),
+            runtimeSupported: Boolean(supportedPlugModel(plug.model)),
+            runtimeActive: livePlugs.has(plug.id),
             online: livePlugs.get(plug.id)?.online || false,
             rssi: livePlugs.get(plug.id)?.rssi ?? null,
             state: livePlugs.get(plug.id)?.state ?? null,
@@ -372,6 +394,7 @@ export function createPondServer({
             sensors: SENSOR_ROLES,
             cameras: CAMERA_ROLES,
           },
+          supportedPlugModels: SUPPORTED_PLUG_MODELS,
         });
         return;
       }
@@ -383,6 +406,7 @@ export function createPondServer({
         }
         try {
           const payload = await readJsonRequest(request, 4096);
+          if (verifyHardwareMatch[1] === 'plugs') requireSupportedPlugModel(payload.model);
           const detected = await (verifyHardwareMatch[1] === 'plugs' ? verifyPlug(payload) : verifyCamera(payload));
           sendJson(response, 200, { verified: true, detected });
         } catch (requestError) {
@@ -399,15 +423,14 @@ export function createPondServer({
             if (kind === 'plugs' && payload.role && payload.role !== 'none') {
               throw new HardwareRegistryError('Le nuove prese restano senza ruolo finché non sono attivate nel runtime.', 'RUNTIME_ACTIVATION_REQUIRED');
             }
-            const detected = kind === 'plugs'
-              ? await verifyPlug(payload)
-              : kind === 'cameras'
+            const detected = kind === 'cameras'
                 ? await verifyCamera(payload)
                 : null;
             const created = await hardwareStore.create(kind, payload);
             const device = detected
               ? await hardwareStore.markVerified(kind, created.id, detected)
               : created;
+            if (kind === 'plugs') await reconcileRuntime();
             sendJson(response, 201, { device, detected });
             return;
           }
@@ -434,19 +457,28 @@ export function createPondServer({
               detected = await (kind === 'plugs' ? verifyPlug(configured) : verifyCamera(configured));
             }
             const device = await hardwareStore.markVerified(kind, id, detected);
+            if (kind === 'plugs') await reconcileRuntime();
             sendJson(response, 200, { verified: true, device, detected });
             return;
           }
           if (request.method === 'PUT') {
             const payload = await readJsonRequest(request, 4096);
-            if (kind === 'plugs' && payload.role && payload.role !== 'none' && !runtimeDeviceIds.has(id)) {
-              throw new HardwareRegistryError(
-                'La presa è registrata ma non è ancora supportata dal runtime corrente.',
-                'RUNTIME_DEVICE_UNSUPPORTED',
-              );
-            }
+            const previousRole = kind === 'plugs' && payload.role !== undefined
+              ? (await roleStore.read())[id] || 'none'
+              : null;
             const device = await hardwareStore.update(kind, id, payload);
-            if (kind === 'plugs' && payload.role !== undefined) await roleStore.assign(id, payload.role);
+            if (kind === 'plugs') {
+              await reconcileRuntime();
+              if (payload.role !== undefined && payload.role !== previousRole) {
+                if (payload.role !== 'none' && !runtimeHasDevice(id)) {
+                  throw new HardwareRegistryError(
+                    'Verificare e attivare la presa prima di assegnare un ruolo operativo.',
+                    'RUNTIME_DEVICE_INACTIVE',
+                  );
+                }
+                await roleStore.assign(id, payload.role);
+              }
+            }
             sendJson(response, 200, { device });
             return;
           }
@@ -454,7 +486,9 @@ export function createPondServer({
             if (kind === 'plugs' && ((await roleStore.read())[id] || 'none') !== 'none') {
               throw new HardwareRegistryError('Liberare il ruolo prima di rimuovere la presa.', 'ROLE_ASSIGNED');
             }
-            sendJson(response, 200, { removed: await hardwareStore.remove(kind, id) });
+            const removed = await hardwareStore.remove(kind, id);
+            if (kind === 'plugs') await reconcileRuntime();
+            sendJson(response, 200, { removed });
             return;
           }
           sendJson(response, 405, { error: 'Metodo non consentito' });
@@ -474,6 +508,7 @@ export function createPondServer({
           return;
         }
         try {
+          await reconcileRuntime();
           const payload = await readJsonRequest(request);
           if (Object.keys(payload).length !== 1 || !['ON', 'OFF'].includes(payload.state)) {
             throw new HeaterControlError('Stato non valido: usare ON oppure OFF.', 400, 'INVALID_STATE');
@@ -496,6 +531,7 @@ export function createPondServer({
           return;
         }
         try {
+          await reconcileRuntime();
           const payload = await readJsonRequest(request);
           if (Object.keys(payload).length !== 1 || !['ON', 'OFF'].includes(payload.state)) {
             throw new PumpControlError('Stato non valido: usare ON oppure OFF.', 400, 'INVALID_STATE');
@@ -524,7 +560,15 @@ export function createPondServer({
         let payload;
         try {
           payload = await readJsonRequest(request);
-          const assignments = await roleStore.assign(decodeURIComponent(roleMatch[1]), payload.role);
+          const id = decodeURIComponent(roleMatch[1]);
+          await reconcileRuntime();
+          if (payload.role !== 'none' && !runtimeHasDevice(id)) {
+            throw new HardwareRegistryError(
+              'Verificare e attivare la presa prima di assegnare un ruolo operativo.',
+              'RUNTIME_DEVICE_INACTIVE',
+            );
+          }
+          const assignments = await roleStore.assign(id, payload.role);
           sendJson(response, 200, { assignments });
         } catch (requestError) {
           sendJson(response, 400, { error: requestError.message });
@@ -548,7 +592,6 @@ const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPat
 if (isMain) {
   try {
     credentialsFromEnvironment();
-    const roleStore = new DeviceRoleStore({ filePath: DEFAULT_ROLE_FILE, deviceList: defaultDevices });
     const hardwareStore = new HardwareRegistryStore({
       filePath: DEFAULT_HARDWARE_FILE,
       defaults: defaultHardwareRegistry({
@@ -557,9 +600,11 @@ if (isMain) {
         dewinConfigured: dewinConfiguredFromEnvironment(),
       }),
     });
-    await hardwareStore.read();
+    const startupRegistry = await hardwareStore.read();
+    const roleStore = new DeviceRoleStore({ filePath: DEFAULT_ROLE_FILE, deviceList: startupRegistry.plugs });
+    await roleStore.reconcileDevices(startupRegistry.plugs);
     const deviceManager = new DeviceManager({
-      deviceList: defaultDevices,
+      deviceList: startupRegistry.plugs.filter(isRuntimeEligiblePlug).map(runtimePlugConfiguration),
       createClient: createConfiguredClient,
       log: info,
     });
@@ -579,7 +624,7 @@ if (isMain) {
     }
     const server = createPondServer({ roleStore, deviceManager, weatherService, dewinService, cameraManager, hardwareStore });
     const safetyMonitor = createSafetyMonitor({
-      deviceList: defaultDevices,
+      deviceList: [],
       roleStore,
       deviceManager,
       log: info,

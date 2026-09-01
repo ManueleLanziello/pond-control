@@ -2,11 +2,12 @@ import crypto from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
+import { requireSupportedPlugModel } from './supported-device-catalog.js';
 
 export const HARDWARE_KINDS = Object.freeze(['plugs', 'sensors', 'cameras']);
 export const SENSOR_ROLES = Object.freeze(['none', 'pond_temperature']);
 export const CAMERA_ROLES = Object.freeze(['none', 'pond_camera']);
-const HARDWARE_REGISTRY_VERSION = 2;
+const HARDWARE_REGISTRY_VERSION = 3;
 const MAC_PATTERN = /^(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}$/i;
 
 export class HardwareRegistryError extends Error {
@@ -48,12 +49,23 @@ function normalizeRecord(kind, input, { allowIncomplete = false } = {}) {
     throw new HardwareRegistryError('Tipo di connessione non valido.', 'INVALID_CONNECTION_TYPE');
   }
   const type = kind === 'sensors' ? requiredText(input.type || input.model, 'tipo') : undefined;
-  const model = kind === 'sensors' ? String(input.model || '').trim() : requiredText(input.model, 'modello');
+  let model = kind === 'sensors' ? String(input.model || '').trim() : requiredText(input.model, 'modello');
+  let plugDefinition = null;
+  if (kind === 'plugs') {
+    try {
+      plugDefinition = requireSupportedPlugModel(model);
+      model = plugDefinition.model;
+    } catch (error) {
+      throw new HardwareRegistryError(error.message, error.code);
+    }
+  }
   const ip = connectionType === 'cloud' && !input.ip ? '' : validateIpv4(input.ip);
   let mac = '';
   const macRequired = kind === 'plugs' || (kind === 'sensors' && connectionType === 'lan');
   if (input.mac || (!allowIncomplete && macRequired)) mac = normalizeMac(input.mac);
-  const protocol = requiredText(input.protocol || (kind === 'plugs' ? 'tpap' : kind === 'cameras' ? 'pytapo-https' : 'none'), 'protocollo');
+  const protocol = kind === 'plugs'
+    ? plugDefinition.protocol
+    : requiredText(input.protocol || (kind === 'cameras' ? 'pytapo-https' : 'none'), 'protocollo');
   const provider = kind === 'sensors' ? String(input.provider || '').trim() : undefined;
   const role = kind === 'plugs' ? undefined : String(input.role || 'none');
   if (role !== undefined && !allowedRoles(kind).includes(role)) {
@@ -61,6 +73,7 @@ function normalizeRecord(kind, input, { allowIncomplete = false } = {}) {
   }
   return {
     id: requiredText(input.id, 'id'), alias, model, ...(type === undefined ? {} : { type }), ip, mac, protocol,
+    ...(plugDefinition ? { manufacturer: plugDefinition.manufacturer, runtimeAdapter: plugDefinition.adapter } : {}),
     ...(kind === 'sensors' ? { connectionType, provider } : {}),
     ...(role === undefined ? {} : { role }),
     configurationStatus: connectionType === 'cloud' || mac ? 'complete' : 'incomplete',
@@ -189,7 +202,8 @@ export class HardwareRegistryStore {
       const index = registry[kind].findIndex((record) => record.id === id);
       if (index < 0) throw new HardwareRegistryError('Dispositivo non trovato.', 'NOT_FOUND');
       const previous = registry[kind][index];
-      const physicalChanged = ['ip', 'mac', 'model', 'type', 'connectionType', 'protocol', 'provider']
+      const technicalFields = ['ip', 'mac', 'model', 'type', 'connectionType', 'provider', ...(kind === 'plugs' ? [] : ['protocol'])];
+      const physicalChanged = technicalFields
         .some((field) => input[field] !== undefined && input[field] !== previous[field]);
       registry[kind][index] = normalizeRecord(kind, {
         ...previous, ...input, id,

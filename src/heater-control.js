@@ -9,8 +9,9 @@ export class HeaterControlError extends Error {
   }
 }
 
-function roleDevice(deviceList, assignments, role) {
-  return deviceList.find((device) => assignments[device.id] === role) || null;
+function roleDevice(deviceManager, assignments, role) {
+  const deviceId = Object.keys(assignments).find((id) => assignments[id] === role);
+  return deviceId ? { id: deviceId, runtimeActive: deviceManager.hasDevice(deviceId) } : null;
 }
 
 export function createHeaterController({ deviceList, roleStore, deviceManager, log = () => {} }) {
@@ -19,11 +20,14 @@ export function createHeaterController({ deviceList, roleStore, deviceManager, l
       throw new HeaterControlError('Stato non valido: usare ON oppure OFF.', 400, 'INVALID_STATE');
     }
     const assignments = await roleStore.read();
-    const heater = roleDevice(deviceList, assignments, 'heater');
+    const heater = roleDevice(deviceManager, assignments, 'heater');
     if (!heater) {
       throw new HeaterControlError('Nessuna presa assegnata al riscaldatore.', 409, 'HEATER_NOT_ASSIGNED');
     }
-    const pump = requestedState === 'ON' ? roleDevice(deviceList, assignments, 'pump') : null;
+    if (!heater.runtimeActive) {
+      throw new HeaterControlError('Runtime del riscaldatore non attivo.', 409, 'HEATER_RUNTIME_INACTIVE');
+    }
+    const pump = requestedState === 'ON' ? roleDevice(deviceManager, assignments, 'pump') : null;
     const involved = [heater.id, pump?.id].filter(Boolean);
 
     return deviceManager.withDevices(involved, async (managed) => {
@@ -31,6 +35,11 @@ export function createHeaterController({ deviceList, roleStore, deviceManager, l
         if (!pump) {
           throw new HeaterControlError(
             'Accensione riscaldatore bloccata: pompa non attiva.', 409, 'PUMP_NOT_RUNNING',
+          );
+        }
+        if (!pump.runtimeActive) {
+          throw new HeaterControlError(
+            'Accensione riscaldatore bloccata: runtime pompa non attivo.', 409, 'PUMP_RUNTIME_INACTIVE',
           );
         }
         try { await managed.read(pump.id); } catch { /* valutato in modo fail-safe sotto */ }

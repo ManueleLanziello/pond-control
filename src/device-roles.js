@@ -62,6 +62,28 @@ export class DeviceRoleStore {
     return operation;
   }
 
+  async reconcileDevices(deviceList) {
+    const nextIds = deviceList.map((device) => device.id);
+    if (nextIds.length === this.deviceIds.length && nextIds.every((id, index) => id === this.deviceIds[index])) {
+      return this.read();
+    }
+    const previousIds = this.deviceIds;
+    const previousDefaults = this.defaults;
+    this.deviceIds = nextIds;
+    this.defaults = validateAssignments(
+      Object.fromEntries(nextIds.map((id) => [id, previousDefaults[id] || 'none'])), nextIds,
+    );
+    try {
+      const assignments = await this.read();
+      await this.write(assignments);
+      return assignments;
+    } catch (error) {
+      this.deviceIds = previousIds;
+      this.defaults = previousDefaults;
+      throw error;
+    }
+  }
+
   async write(assignments) {
     const validated = validateAssignments(assignments, this.deviceIds);
     const payload = `${JSON.stringify({ version: 1, assignments: validated }, null, 2)}\n`;

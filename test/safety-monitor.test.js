@@ -140,3 +140,20 @@ test('overlapping safety evaluations are skipped and failures remain retryable',
   retry.writeFailures.delete('tapo-p100m-pond');
   assert.equal((await retry.safety.runCycle()).verified, true);
 });
+
+test('safety never falls back to a stale heater client during technical replacement', async () => {
+  const run = createManagerHarness(devices, {
+    states: { 'tapo-p105-pond': false, 'tapo-p100m-pond': true },
+  });
+  await run.manager.pollAll();
+  run.manager.reconcileDevices(devices.filter(({ id }) => id !== 'tapo-p100m-pond'));
+  const monitor = createSafetyMonitor({
+    deviceList: devices,
+    roleStore: { read: async () => ({ 'tapo-p105-pond': 'pump', 'tapo-p100m-pond': 'heater' }) },
+    deviceManager: run.manager,
+  });
+  const before = run.events.filter(([event]) => event === 'write').length;
+  const result = await monitor.runCycle();
+  assert.equal(result.reason, 'HEATER_UNASSIGNED');
+  assert.equal(run.events.filter(([event]) => event === 'write').length, before);
+});

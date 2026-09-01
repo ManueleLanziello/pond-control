@@ -23,6 +23,26 @@ function decodeAlias(value) {
   } catch { return value; }
 }
 
+function technicalIdentity(device) {
+  return JSON.stringify([device.ip, device.model, device.protocol, device.adapter, device.type]);
+}
+
+function createEntry(device) {
+  return {
+    device,
+    client: null,
+    lock: createOperationLock(),
+    info: null,
+    lastReadTimestamp: null,
+    online: false,
+    communicationDegraded: false,
+    consecutiveFailures: 0,
+    currentError: null,
+    nextAttemptAt: 0,
+    inProgress: false,
+  };
+}
+
 export class DeviceManager {
   constructor({
     deviceList,
@@ -43,19 +63,53 @@ export class DeviceManager {
     this.timer = null;
     this.pollPromise = null;
     this.cyclePromise = null;
-    this.entries = new Map(deviceList.map((device) => [device.id, {
-      device,
-      client: null,
-      lock: createOperationLock(),
-      info: null,
-      lastReadTimestamp: null,
-      online: false,
-      communicationDegraded: false,
-      consecutiveFailures: 0,
-      currentError: null,
-      nextAttemptAt: 0,
-      inProgress: false,
-    }]));
+    this.entries = new Map(deviceList.map((device) => [device.id, createEntry(device)]));
+  }
+
+  hasDevice(deviceId) { return this.entries.has(deviceId); }
+
+  reconcileDevices(deviceList) {
+    const desired = new Map(deviceList.map((device) => [device.id, device]));
+    const removed = [];
+    const added = [];
+    const replaced = [];
+    const preserved = [];
+    for (const [id, entry] of this.entries) {
+      const next = desired.get(id);
+      if (!next) {
+        this.invalidate(entry);
+        this.entries.delete(id);
+        removed.push(id);
+      } else if (technicalIdentity(entry.device) !== technicalIdentity(next)) {
+        this.invalidate(entry);
+        this.entries.set(id, createEntry(next));
+        replaced.push(id);
+      } else {
+        entry.device = next;
+        preserved.push(id);
+      }
+    }
+    for (const [id, device] of desired) {
+      if (!this.entries.has(id)) {
+        this.entries.set(id, createEntry(device));
+        added.push(id);
+      }
+    }
+    this.deviceList = [...deviceList];
+    return { added, removed, replaced, preserved };
+  }
+
+  registerDevice(device) {
+    return this.reconcileDevices([...this.deviceList.filter(({ id }) => id !== device.id), device]);
+  }
+
+  updateDevice(deviceId, device) {
+    if (!this.entries.has(deviceId)) throw new DeviceCommunicationError('Dispositivo non configurato.', 'DEVICE_NOT_FOUND');
+    return this.reconcileDevices(this.deviceList.map((current) => current.id === deviceId ? device : current));
+  }
+
+  removeDevice(deviceId) {
+    return this.reconcileDevices(this.deviceList.filter(({ id }) => id !== deviceId));
   }
 
   entry(deviceId) {

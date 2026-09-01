@@ -7,8 +7,9 @@ export class PumpControlError extends Error {
   }
 }
 
-function roleDevice(deviceList, assignments, role) {
-  return deviceList.find((device) => assignments[device.id] === role) || null;
+function roleDevice(deviceManager, assignments, role) {
+  const deviceId = Object.keys(assignments).find((id) => assignments[id] === role);
+  return deviceId ? { id: deviceId, runtimeActive: deviceManager.hasDevice(deviceId) } : null;
 }
 
 export function createPumpController({ deviceList, roleStore, deviceManager, log = () => {} }) {
@@ -17,9 +18,13 @@ export function createPumpController({ deviceList, roleStore, deviceManager, log
       throw new PumpControlError('Stato non valido: usare ON oppure OFF.', 400, 'INVALID_STATE');
     }
     const assignments = await roleStore.read();
-    const pump = roleDevice(deviceList, assignments, 'pump');
+    const pump = roleDevice(deviceManager, assignments, 'pump');
     if (!pump) throw new PumpControlError('Nessuna presa assegnata alla pompa.', 409, 'PUMP_NOT_ASSIGNED');
-    const heater = roleDevice(deviceList, assignments, 'heater');
+    if (!pump.runtimeActive) throw new PumpControlError('Runtime della pompa non attivo.', 409, 'PUMP_RUNTIME_INACTIVE');
+    const heater = roleDevice(deviceManager, assignments, 'heater');
+    if (heater && !heater.runtimeActive) {
+      throw new PumpControlError('Runtime del riscaldatore non attivo.', 409, 'HEATER_RUNTIME_INACTIVE');
+    }
     const involved = requestedState === 'OFF' && heater ? [pump.id, heater.id] : [pump.id];
 
     return deviceManager.withDevices(involved, async (managed) => {

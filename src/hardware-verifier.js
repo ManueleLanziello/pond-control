@@ -13,7 +13,7 @@ function decodeAlias(value) {
   } catch { return value; }
 }
 
-function assertIdentity(configured, detected) {
+export function assertHardwareIdentity(configured, detected) {
   const expectedModel = String(configured.model || '').trim().toUpperCase();
   const actualModel = String(detected.model || '').trim().toUpperCase();
   if (!actualModel || !(actualModel === expectedModel || actualModel.startsWith(`${expectedModel}(`))) {
@@ -41,7 +41,7 @@ export async function verifyTapoPlug(configured, { username, password, timeout =
       rssi: typeof info.rssi === 'number' ? info.rssi : null,
       state: typeof info.device_on === 'boolean' ? (info.device_on ? 'ON' : 'OFF') : null,
     };
-    assertIdentity(configured, detected);
+    assertHardwareIdentity(configured, detected);
     return detected;
   } finally {
     client.close();
@@ -71,6 +71,6 @@ export async function verifyTapoCamera(configured, { pythonPath, probePath, env 
     protocol: report.transport || 'PyTapo HTTPS',
     online: true,
   };
-  assertIdentity(configured, detected);
+  assertHardwareIdentity(configured, detected);
   return detected;
 }

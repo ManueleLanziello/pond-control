@@ -6,6 +6,7 @@ import test from 'node:test';
 import { devices } from '../devices.js';
 import { DeviceRoleStore, VALID_DEVICE_ROLES } from '../src/device-roles.js';
 import { createPondServer } from '../server.js';
+import { defaultHardwareRegistry, HardwareRegistryStore } from '../src/hardware-registry.js';
 
 async function withRoleStore(callback) {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'pond-control-roles-'));
@@ -20,8 +21,24 @@ async function withRoleStore(callback) {
 
 async function withRoleServer(store, callback) {
   let tapoReads = 0;
+  const hardwareStore = new HardwareRegistryStore({
+    filePath: path.join(path.dirname(store.filePath), 'hardware.json'),
+    defaults: defaultHardwareRegistry({ deviceList: devices }),
+  });
+  await hardwareStore.read();
+  await hardwareStore.markVerified('plugs', 'tapo-p105-pond', { model: 'P105', mac: 'AA:BB:CC:DD:EE:05' });
+  await hardwareStore.markVerified('plugs', 'tapo-p100m-pond', { model: 'P100M', mac: 'AA:BB:CC:DD:EE:00' });
+  const runtimeIds = new Set(devices.map(({ id }) => id));
   const server = createPondServer({
     roleStore: store,
+    hardwareStore,
+    deviceManager: {
+      reconcileDevices: (configured) => { runtimeIds.clear(); configured.forEach(({ id }) => runtimeIds.add(id)); },
+      hasDevice: (id) => runtimeIds.has(id),
+      snapshots: () => devices.filter(({ id }) => runtimeIds.has(id)).map((device) => ({
+        id: device.id, name: device.fallbackName, model: device.model, ip: device.ip, online: false,
+      })),
+    },
     readDevice: async () => { tapoReads += 1; return {}; },
     logDeviceStatus: () => {},
   });

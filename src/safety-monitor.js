@@ -1,7 +1,8 @@
 import { DEVICE_FRESHNESS_MS, DEVICE_POLL_INTERVAL_MS } from './device-manager.js';
 
-function roleDevice(deviceList, assignments, role) {
-  return deviceList.find((device) => assignments[device.id] === role) || null;
+function roleDevice(deviceManager, assignments, role) {
+  const deviceId = Object.keys(assignments).find((id) => assignments[id] === role);
+  return deviceId && deviceManager.hasDevice(deviceId) ? { id: deviceId } : null;
 }
 
 export function createSafetyMonitor({
@@ -33,8 +34,8 @@ export function createSafetyMonitor({
     running = true;
     try {
       const assignments = await roleStore.read();
-      const pump = roleDevice(deviceList, assignments, 'pump');
-      const heater = roleDevice(deviceList, assignments, 'heater');
+      const pump = roleDevice(deviceManager, assignments, 'pump');
+      const heater = roleDevice(deviceManager, assignments, 'heater');
       if (!heater) return { action: 'none', reason: 'HEATER_UNASSIGNED' };
 
       let pumpCondition = 'UNASSIGNED';
