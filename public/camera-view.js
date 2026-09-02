@@ -16,6 +16,7 @@ export function initCameraCard(container, fetchImpl = fetch) {
   const updatedAt = container.querySelector('#camera-updated-at');
   const button = container.querySelector('#camera-live-toggle');
   const buttonState = container.querySelector('#camera-live-state');
+  const identity = container.querySelector('#camera-identity');
   let live = false;
   let pending = false;
   let frameTimer = null;
@@ -33,6 +34,9 @@ export function initCameraCard(container, fetchImpl = fetch) {
   }
 
   function applyState(camera) {
+    identity.textContent = camera.alias
+      ? [camera.alias, camera.model].filter(Boolean).join(' · ')
+      : 'Nessuna telecamera assegnata';
     live = Boolean(camera.live);
     container.classList.toggle('is-live', live);
     status.textContent = camera.status === 'LIVE'
@@ -51,6 +55,7 @@ export function initCameraCard(container, fetchImpl = fetch) {
     button.setAttribute('aria-pressed', String(live));
     buttonState.textContent = live ? 'ON' : 'OFF';
     if (camera.imageAvailable) refreshFrame(camera.imageVersion || Date.now());
+    else { image.removeAttribute('src'); container.classList.add('image-unavailable'); }
 
     stopLocalRefresh();
     if (live) {

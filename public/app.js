@@ -165,7 +165,8 @@ function pondTemperatureCard(dewin) {
     const placeholderTitle = document.createElement('strong');
     placeholderTitle.textContent = 'Monitoraggio acqua';
     const placeholderText = document.createElement('span');
-    placeholderText.textContent = 'In attesa dei dati Dewin';
+    placeholderText.textContent = latestHardware?.sensors?.some((sensor) => sensor.role === 'pond_temperature')
+      ? 'Sensore non disponibile' : 'Sensore non configurato';
     placeholder.append(placeholderTitle, placeholderText);
     card.append(placeholder);
     return card;

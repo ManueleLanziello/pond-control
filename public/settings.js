@@ -14,7 +14,6 @@ const ROLE_LABELS = Object.freeze({
   none: 'Nessun ruolo', pump: 'Pompa Filtro', heater: 'Riscaldatore',
   pond_temperature: 'Temperatura Acqua', pond_camera: 'Telecamera Pond',
 });
-const PROTOCOLS = Object.freeze({ plugs: 'tpap', sensors: 'none', cameras: 'pytapo-https' });
 let hardware = { plugs: [], sensors: [], cameras: [], roles: {} };
 let adding = false;
 let formVerified = false;
@@ -31,7 +30,7 @@ function textRow(label, value, className = '') {
 
 function roleOptions(kind, selected, { runtimeActive = true } = {}) {
   const fragment = document.createDocumentFragment();
-  const availableRoles = kind === 'plugs' && !runtimeActive
+  const availableRoles = !runtimeActive
     ? (selected === 'none' ? ['none'] : [selected, 'none'])
     : hardware.roles[kind] || ['none'];
   for (const role of availableRoles) {
@@ -74,11 +73,9 @@ function hardwareCard(kind, device) {
     : device.model;
   identity.append(alias, model);
   heading.append(identity);
-  if (!(kind === 'sensors' && device.connectionType === 'cloud')) {
-    const verification = document.createElement('span'); verification.className = `hardware-badge is-${device.verificationStatus}`;
-    verification.textContent = device.verificationStatus === 'verified' ? 'VERIFICATA' : 'DA VERIFICARE';
-    heading.append(verification);
-  }
+  const verification = document.createElement('span'); verification.className = `hardware-badge is-${device.verificationStatus}`;
+  verification.textContent = device.verificationStatus === 'verified' ? 'VERIFICATA' : 'DA VERIFICARE';
+  heading.append(verification);
   const role = document.createElement('select'); role.className = 'role-select'; role.setAttribute('aria-label', `Ruolo per ${device.alias}`);
   role.append(roleOptions(kind, device.role || 'none', device));
   role.addEventListener('change', () => updateRole(kind, device, role.value).catch(showError));
@@ -96,9 +93,7 @@ function hardwareCard(kind, device) {
     ...(kind === 'plugs' ? [textRow('Runtime', device.runtimeActive ? 'OPERATIVA' : 'NON ATTIVA')] : []));
   const actions = document.createElement('div'); actions.className = 'settings-card-actions';
   actions.append(actionButton('Modifica', () => openForm(kind, device)));
-  if (!(kind === 'sensors' && device.connectionType === 'cloud')) {
-    actions.append(actionButton('Verifica', () => verifySaved(kind, device)));
-  }
+  actions.append(actionButton('Verifica', () => verifySaved(kind, device)));
   actions.append(actionButton('Rimuovi', () => removeDevice(kind, device), 'is-danger'));
   card.append(heading, role, details, actions);
   return card;
@@ -122,43 +117,38 @@ async function loadHardware(message = 'Configurazione pronta') {
 
 function formPayload() {
   const kind = document.querySelector('#hardware-kind').value;
-  const modelOrType = (kind === 'plugs'
-    ? document.querySelector('#hardware-model').value
-    : document.querySelector('#hardware-model-text').value).trim();
+  const modelOrType = document.querySelector('#hardware-model').value.trim();
   const common = {
     alias: document.querySelector('#hardware-alias').value.trim(),
-    model: kind === 'sensors' ? '' : modelOrType, ...(kind === 'sensors' ? { type: modelOrType } : {}),
+    model: modelOrType,
     ip: document.querySelector('#hardware-ip').value.trim(), mac: document.querySelector('#hardware-mac').value.trim(),
     role: document.querySelector('#hardware-role').value,
   };
-  if (kind === 'plugs') return common;
-  const connectionType = kind === 'sensors' ? document.querySelector('#hardware-connection').value : 'lan';
-  const provider = document.querySelector('#hardware-provider').value.trim();
-  return {
-    ...common, connectionType, provider,
-    protocol: kind === 'sensors' ? editingDevice?.protocol || provider || 'none' : PROTOCOLS[kind],
-  };
+  return kind === 'sensors' ? { ...common, tuyaDeviceId: document.querySelector('#hardware-tuya-id').value.trim() } : common;
 }
 
 function updateConnectionFields() {
   const kind = document.querySelector('#hardware-kind').value;
-  const cloud = kind === 'sensors' && document.querySelector('#hardware-connection').value === 'cloud';
-  document.querySelector('#hardware-model-select-field').hidden = kind !== 'plugs';
-  document.querySelector('#hardware-model-text-field').hidden = kind === 'plugs';
-  document.querySelector('#hardware-model').required = kind === 'plugs';
-  document.querySelector('#hardware-model-text').required = kind !== 'plugs';
-  document.querySelector('#hardware-connection-field').hidden = kind !== 'sensors';
-  document.querySelector('#hardware-provider-field').hidden = kind !== 'sensors';
-  document.querySelector('#hardware-ip-field').hidden = cloud;
-  document.querySelector('#hardware-mac-field').hidden = cloud;
-  document.querySelector('#hardware-ip').required = !cloud;
-  document.querySelector('#hardware-mac').required = !cloud && kind !== 'cameras';
-  document.querySelector('#hardware-verify').hidden = cloud || adding;
+  const sensor = kind === 'sensors';
+  document.querySelector('#hardware-model-select-field').hidden = false;
+  document.querySelector('#hardware-model-text-field').hidden = true;
+  document.querySelector('#hardware-model').required = true;
+  document.querySelector('#hardware-model-text').required = false;
+  document.querySelector('#hardware-connection-field').hidden = true;
+  document.querySelector('#hardware-provider-field').hidden = true;
+  document.querySelector('#hardware-ip-field').hidden = sensor;
+  document.querySelector('#hardware-mac-field').hidden = sensor;
+  document.querySelector('#hardware-tuya-id-field').hidden = !sensor;
+  document.querySelector('#hardware-tuya-id').required = sensor;
+  document.querySelector('#hardware-ip').required = !sensor;
+  document.querySelector('#hardware-mac').required = !sensor;
+  document.querySelector('#hardware-verify').hidden = false;
 }
 
 function populateModelOptions(kind, device) {
   const field = document.querySelector('#hardware-model');
-  const values = kind === 'plugs' ? (hardware.supportedPlugModels || []).map(({ model }) => model) : [];
+  const catalog = { plugs: 'supportedPlugModels', sensors: 'supportedSensorModels', cameras: 'supportedCameraModels' }[kind];
+  const values = (hardware[catalog] || []).map(({ model }) => model);
   field.replaceChildren(...[...new Set(values.filter(Boolean))].map((value) => {
     const option = document.createElement('option'); option.value = value; option.textContent = value; return option;
   }));
@@ -171,18 +161,17 @@ function openForm(kind, device = null) {
   document.querySelector('#hardware-form-title').textContent = device ? `Modifica ${device.alias}` : `Aggiungi ${KIND_LABELS[kind].toLowerCase()}`;
   document.querySelector('#hardware-alias').value = device?.alias || '';
   populateModelOptions(kind, device);
-  document.querySelector('#hardware-model').value = kind === 'sensors' ? device?.type || device?.model || '' : device?.model || '';
+  document.querySelector('#hardware-model').value = device?.model || '';
   document.querySelector('#hardware-model-text').value = kind === 'sensors' ? device?.type || device?.model || '' : device?.model || '';
   document.querySelector('#hardware-ip').value = device?.ip || ''; document.querySelector('#hardware-mac').value = device?.mac || '';
+  document.querySelector('#hardware-tuya-id').value = device?.tuyaDeviceId || '';
   document.querySelector('#hardware-connection').value = device?.connectionType || 'lan';
   document.querySelector('#hardware-provider').value = device?.provider || (kind === 'sensors' ? device?.protocol || '' : '');
   updateConnectionFields();
   const role = document.querySelector('#hardware-role');
   role.replaceChildren(roleOptions(kind, device?.role || 'none', { runtimeActive: Boolean(device?.runtimeActive) }));
   formStatus.className = 'status-message';
-  formStatus.textContent = kind === 'sensors'
-    ? (device?.connectionType === 'cloud' ? 'La configurazione cloud usa lo stato già disponibile del servizio.' : 'La verifica LAN sarà disponibile con il primo protocollo supportato.')
-    : kind === 'plugs' && !device?.runtimeActive
+  formStatus.textContent = kind === 'plugs' && !device?.runtimeActive
       ? 'Salvare la presa e completare la verifica read-only prima di assegnare un ruolo operativo.'
       : '';
   saveButton.disabled = false; dialog.showModal();
@@ -190,7 +179,6 @@ function openForm(kind, device = null) {
 
 async function verifyForm() {
   const kind = document.querySelector('#hardware-kind').value;
-  if (kind === 'sensors') return;
   formStatus.textContent = 'Verifica read-only in corso…';
   try {
     const result = await request(`/api/hardware/${kind}/verify`, {
@@ -213,9 +201,6 @@ async function saveForm(event) {
 }
 
 async function verifySaved(kind, device) {
-  if (kind === 'sensors' && device.connectionType !== 'cloud') {
-    throw new Error('Verifica sensore LAN non ancora disponibile.');
-  }
   await request(`/api/hardware/${kind}/${encodeURIComponent(device.id)}/verify`, { method: 'POST' });
   await loadHardware('Dispositivo verificato in sola lettura');
 }
@@ -231,7 +216,7 @@ document.querySelector('[data-close-dialog]').addEventListener('click', () => di
 document.querySelector('#hardware-verify').addEventListener('click', verifyForm);
 document.querySelector('#hardware-connection').addEventListener('change', updateConnectionFields);
 form.addEventListener('input', () => {
-  if (document.querySelector('#hardware-kind').value !== 'sensors') formVerified = false;
+  formVerified = false;
 });
 form.addEventListener('submit', (event) => saveForm(event).catch((error) => {
   event.preventDefault(); formStatus.textContent = error.message; formStatus.className = 'status-message has-error';

@@ -41,7 +41,7 @@ test('settings cards show hardware identity, connection and verification data', 
   }
   assert.match(cardSource, /VERIFICATA/);
   assert.match(cardSource, /DA VERIFICARE/);
-  assert.match(cardSource, /if \(!\(kind === 'sensors' && device\.connectionType === 'cloud'\)\)/);
+  assert.match(cardSource, /verification\.textContent/);
   assert.match(cardSource, /actionButton\('Modifica'/);
   assert.match(cardSource, /actionButton\('Verifica'/);
   assert.match(cardSource, /actionButton\('Rimuovi'/);
@@ -57,13 +57,12 @@ test('settings saves new plugs inactive and offers read-only verification after 
   for (const field of ['hardware-alias', 'hardware-model', 'hardware-ip', 'hardware-mac', 'hardware-role']) {
     assert.match(page, new RegExp(`id="${field}"`));
   }
-  assert.match(script, /hardware\.supportedPlugModels/);
-  assert.match(script, /if \(kind === 'plugs'\) return common/);
-  assert.match(script, /hardware-model-text-field'\)\.hidden = kind === 'plugs'/);
-  assert.match(script, /hardware-connection-field'\)\.hidden = kind !== 'sensors'/);
-  assert.match(script, /hardware-provider-field'\)\.hidden = kind !== 'sensors'/);
+  assert.match(script, /supportedPlugModels/);
+  assert.match(script, /hardware-model-text-field'\)\.hidden = true/);
+  assert.match(script, /hardware-connection-field'\)\.hidden = true/);
+  assert.match(script, /hardware-provider-field'\)\.hidden = true/);
   assert.match(style, /\.hardware-dialog \[hidden\]\s*\{\s*display:\s*none/);
-  assert.match(script, /hardware-verify'\)\.hidden = cloud \|\| adding/);
+  assert.match(script, /hardware-verify'\)\.hidden = false/);
   assert.match(script, /saveButton\.disabled = false/);
   assert.doesNotMatch(script, /Verifica sensori? non ancora disponibile/);
   assert.doesNotMatch(script, /\/api\/(?:devices|functions)\/[^'`]*\/(?:on|off|toggle)/i);
@@ -81,25 +80,22 @@ test('cloud sensor cards show provider and cloud status without IP or MAC rows',
   const card = script.slice(script.indexOf('function hardwareCard'), script.indexOf('function renderKind'));
   assert.match(card, /`\$\{device\.type\}\$\{device\.provider \? ` · \$\{device\.provider\}` : ''\}`/);
   assert.match(card, /kind === 'sensors' && device\.connectionType === 'cloud'/);
-  assert.match(card, /if \(!\(kind === 'sensors' && device\.connectionType === 'cloud'\)\)/);
   assert.match(card, /textRow\('Connessione', 'CLOUD'\)/);
   assert.match(card, /\? \[textRow\('Connessione', 'CLOUD'\), statusRow\]\s*: \[/);
-  const cloudBadgeGuard = card.indexOf("if (!(kind === 'sensors' && device.connectionType === 'cloud'))");
-  assert.ok(cloudBadgeGuard >= 0);
-  assert.ok(cloudBadgeGuard < card.indexOf("verification.textContent"));
+  assert.ok(card.indexOf("verification.textContent") >= 0);
   assert.match(card, /textRow\('Configurazione', device\.configurationStatus === 'complete' \? 'COMPLETA' : 'INCOMPLETA'\)/);
 });
 
-test('camera form requires IP but permits an initially empty MAC', async () => {
+test('camera form requires both IP and MAC', async () => {
   const script = await readFile(new URL('../public/settings.js', import.meta.url), 'utf8');
-  assert.match(script, /hardware-ip'\)\.required = !cloud/);
-  assert.match(script, /hardware-mac'\)\.required = !cloud && kind !== 'cameras'/);
+  assert.match(script, /hardware-ip'\)\.required = !sensor/);
+  assert.match(script, /hardware-mac'\)\.required = !sensor/);
 });
 
-test('sensor form preserves its protocol and hides redundant cloud verification', async () => {
+test('sensor form derives protocol and offers read-only verification', async () => {
   const script = await readFile(new URL('../public/settings.js', import.meta.url), 'utf8');
-  assert.match(script, /editingDevice\?\.protocol \|\| provider \|\| 'none'/);
-  assert.match(script, /hardware-verify'\)\.hidden = cloud/);
-  assert.match(script, /kind === 'sensors' && device\.connectionType !== 'cloud'/);
+  assert.doesNotMatch(script, /editingDevice\?\.protocol/);
+  assert.match(script, /hardware-verify'\)\.hidden = false/);
+  assert.match(script, /hardware-tuya-id/);
   assert.doesNotMatch(script, /if \(kind === 'sensors'\) throw new Error\('Verifica sensori non ancora disponibile/);
 });

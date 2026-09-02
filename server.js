@@ -21,9 +21,11 @@ import { createPumpController, PumpControlError } from './src/pump-control.js';
 import { createSafetyMonitor } from './src/safety-monitor.js';
 import { TpapClient } from './src/tpap/client.js';
 import { WeatherService } from './src/weather-service.js';
+import { RoleRuntimeManager } from './src/role-runtime-manager.js';
 import {
-  isRuntimeEligiblePlug, requireSupportedPlugModel, runtimePlugConfiguration, supportedPlugModel,
-  SUPPORTED_PLUG_MODELS,
+  isRuntimeEligible, isRuntimeEligiblePlug, requireSupportedDeviceModel, requireSupportedPlugModel, runtimeConfiguration,
+  runtimePlugConfiguration, supportedCameraModel, supportedPlugModel, supportedSensorModel,
+  SUPPORTED_CAMERA_MODELS, SUPPORTED_PLUG_MODELS, SUPPORTED_SENSOR_MODELS,
 } from './src/supported-device-catalog.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -108,6 +110,15 @@ function dewinConfiguredFromEnvironment() {
     && process.env.TUYA_CLIENT_SECRET?.trim()
     && process.env.TUYA_DEVICE_ID?.trim(),
   );
+}
+
+function legacyRuntimeManager(runtime, role, emptySnapshot) {
+  return {
+    reconcile: async () => {}, has: () => true, recordIdForRole: () => null,
+    snapshot: async () => runtime.snapshot(), history: async (_role, date) => runtime.history(date),
+    imagePath: async () => runtime.imagePath(), start: async () => runtime.start(), stop: async () => runtime.stop(),
+    close: async () => runtime.stop?.(), emptySnapshot,
+  };
 }
 
 export function createConfiguredClient(device) {
@@ -206,10 +217,12 @@ export function createPondServer({
   weatherService = new WeatherService({ config: WEATHER_CONFIG, log: info, logError: error }),
   dewinService = UNAVAILABLE_DEWIN_SERVICE,
   cameraManager = UNAVAILABLE_CAMERA_MANAGER,
+  sensorRuntimeManager = null,
+  cameraRuntimeManager = null,
   hardwareStore = new HardwareRegistryStore({
     filePath: DEFAULT_HARDWARE_FILE,
-    defaults: defaultHardwareRegistry({
-      deviceList, cameraIp: process.env.TAPO_CAMERA_IP, dewinConfigured: dewinConfiguredFromEnvironment(),
+      defaults: defaultHardwareRegistry({
+      deviceList, cameraIp: process.env.TAPO_CAMERA_IP, dewinDeviceId: process.env.TUYA_DEVICE_ID?.trim() || '', dewinConfigured: dewinConfiguredFromEnvironment(),
     }),
   }),
   verifyPlug = (candidate) => verifyTapoPlug(candidate, {
@@ -218,13 +231,35 @@ export function createPondServer({
   verifyCamera = (candidate) => verifyTapoCamera(candidate, {
     pythonPath: defaultCameraPython(ROOT), probePath: path.join(ROOT, 'tools', 'c410_probe.py'),
   }),
+  verifySensor = null,
 } = {}) {
+  const dynamicSensors = Boolean(sensorRuntimeManager); const dynamicCameras = Boolean(cameraRuntimeManager);
+  verifySensor ||= async (candidate) => {
+    requireSupportedDeviceModel('sensor', candidate.model);
+    if (!dynamicSensors) {
+      const snapshot = dewinService.snapshot();
+      if (!snapshot?.available) throw new HardwareRegistryError('Nessuno snapshot Dewin valido disponibile.', 'CLOUD_SNAPSHOT_UNAVAILABLE');
+      return { model: candidate.model, provider: 'Tuya Cloud', deviceId: snapshot.deviceId || candidate.tuyaDeviceId, online: snapshot.online, snapshotUpdatedAt: snapshot.updatedAt };
+    }
+    const service = createDewinServiceFromEnvironment({ deviceId: candidate.tuyaDeviceId });
+    try { const snapshot = await service.refresh(); if (!snapshot.available) throw new HardwareRegistryError('Sensore Tuya non disponibile.', 'CLOUD_SNAPSHOT_UNAVAILABLE'); if (snapshot.deviceId !== candidate.tuyaDeviceId) throw new HardwareRegistryError('Il Device ID Tuya letto non corrisponde alla configurazione.', 'DEVICE_ID_MISMATCH'); return { model: candidate.model, provider: 'Tuya Cloud', deviceId: snapshot.deviceId, online: snapshot.online, snapshotUpdatedAt: snapshot.updatedAt }; }
+    finally { service.stop(); }
+  };
+  const sensors = sensorRuntimeManager || legacyRuntimeManager(dewinService, 'pond_temperature', UNAVAILABLE_DEWIN_SERVICE.snapshot);
+  const cameras = cameraRuntimeManager || legacyRuntimeManager(cameraManager, 'pond_camera', UNAVAILABLE_CAMERA_MANAGER.snapshot);
   async function reconcileRuntime() {
     const registry = await hardwareStore.read();
     const runtimeDevices = registry.plugs.filter(isRuntimeEligiblePlug).map(runtimePlugConfiguration);
     if (typeof deviceManager.reconcileDevices === 'function') deviceManager.reconcileDevices(runtimeDevices);
-    if (typeof roleStore.reconcileDevices === 'function') await roleStore.reconcileDevices(registry.plugs);
-    return registry;
+    if (typeof roleStore.reconcileDevices === 'function') await roleStore.reconcileDevices(
+      [...registry.plugs, ...registry.sensors, ...registry.cameras], hardwareStore.legacyRoleAssignments,
+    );
+    const storedAssignments = await roleStore.read();
+    const assignments = typeof roleStore.reconcileDevices === 'function'
+      ? storedAssignments : { ...hardwareStore.legacyRoleAssignments, ...storedAssignments };
+    await sensors.reconcile(registry.sensors.filter((record) => isRuntimeEligible('sensor', record)).map((record) => runtimeConfiguration('sensor', record)), assignments);
+    await cameras.reconcile(registry.cameras.filter((record) => isRuntimeEligible('camera', record)).map((record) => runtimeConfiguration('camera', record)), assignments);
+    return { registry, assignments };
   }
   const runtimeHasDevice = (id) => typeof deviceManager.hasDevice === 'function'
     ? deviceManager.hasDevice(id)
@@ -250,7 +285,10 @@ export function createPondServer({
           response.end();
           return;
         }
-        sendJson(response, 200, await cameraManager.snapshot());
+        const { registry, assignments } = await reconcileRuntime(); const deviceId = Object.keys(assignments).find((id) => assignments[id] === 'pond_camera');
+        const configured = registry.cameras.find((item) => item.id === deviceId);
+        const snapshot = await cameras.snapshot('pond_camera');
+        sendJson(response, 200, dynamicCameras ? { ...snapshot, deviceId: deviceId || null, alias: configured?.alias || null, model: configured?.model || null } : snapshot);
         return;
       }
       if (url.pathname === '/api/camera/image') {
@@ -259,7 +297,7 @@ export function createPondServer({
           response.end();
           return;
         }
-        await sendCameraImage(response, await cameraManager.imagePath());
+        await reconcileRuntime(); await sendCameraImage(response, await cameras.imagePath('pond_camera'));
         return;
       }
       if (url.pathname === '/api/camera/live') {
@@ -273,7 +311,7 @@ export function createPondServer({
           if (Object.keys(payload).length !== 1 || typeof payload.active !== 'boolean') {
             throw new CameraControlError('Specificare active=true oppure active=false.', 400, 'INVALID_CAMERA_STATE');
           }
-          sendJson(response, 200, payload.active ? await cameraManager.start() : await cameraManager.stop());
+          await reconcileRuntime(); sendJson(response, 200, payload.active ? await cameras.start('pond_camera') : await cameras.stop('pond_camera'));
         } catch (cameraError) {
           sendJson(response, cameraError instanceof CameraControlError ? cameraError.status : 500, {
             ok: false,
@@ -289,8 +327,7 @@ export function createPondServer({
           response.end();
           return;
         }
-        const registry = await reconcileRuntime();
-        const roleAssignments = await roleStore.read();
+        const { registry, assignments: roleAssignments } = await reconcileRuntime();
         const liveDevices = new Map(deviceManager.snapshots().map((device) => [device.id, device]));
         const result = registry.plugs.map((plug) => ({
           ...(liveDevices.get(plug.id) || {
@@ -319,7 +356,10 @@ export function createPondServer({
           response.end();
           return;
         }
-        sendJson(response, 200, dewinService.snapshot());
+        const { registry, assignments } = await reconcileRuntime(); const deviceId = Object.keys(assignments).find((id) => assignments[id] === 'pond_temperature');
+        const configured = registry.sensors.find((item) => item.id === deviceId);
+        const snapshot = await sensors.snapshot('pond_temperature');
+        sendJson(response, 200, dynamicSensors ? { ...snapshot, hardwareId: deviceId || null, alias: configured?.alias || null, model: configured?.model || null } : snapshot);
         return;
       }
       if (url.pathname === '/api/dewin/history') {
@@ -329,7 +369,7 @@ export function createPondServer({
           return;
         }
         try {
-          sendJson(response, 200, await dewinService.history(url.searchParams.get('date') || undefined));
+          await reconcileRuntime(); sendJson(response, 200, await sensors.history('pond_temperature', url.searchParams.get('date') || undefined));
         } catch (historyError) {
           const status = historyError instanceof RangeError ? 400 : 500;
           sendJson(response, status, { error: status === 400 ? historyError.message : 'Storico Dewin non disponibile' });
@@ -352,24 +392,12 @@ export function createPondServer({
           sendJson(response, 405, { error: 'Metodo non consentito' });
           return;
         }
-        const registry = await reconcileRuntime();
-        const assignments = await roleStore.read();
+        const { registry, assignments } = await reconcileRuntime();
         const livePlugs = new Map(deviceManager.snapshots().map((device) => [device.id, device]));
-        const dewin = dewinService.snapshot();
-        for (const sensor of registry.sensors) {
-          const isUsableDewin = sensor.connectionType === 'cloud'
-            && sensor.protocol === 'tuya-cloud'
-            && sensor.role === 'pond_temperature'
-            && sensor.configurationStatus === 'complete'
-            && Boolean(dewin.available);
-          if (isUsableDewin && sensor.verificationStatus !== 'verified') {
-            Object.assign(sensor, await hardwareStore.markVerified('sensors', sensor.id, {
-              provider: sensor.provider || 'Tuya Cloud',
-              protocol: sensor.protocol,
-              snapshotUpdatedAt: dewin.updatedAt || null,
-            }));
-          }
-        }
+        const currentSensorId = Object.keys(assignments).find((id) => assignments[id] === 'pond_temperature');
+        const currentSensorSnapshot = currentSensorId ? await sensors.snapshot('pond_temperature') : null;
+        const currentCameraId = Object.keys(assignments).find((id) => assignments[id] === 'pond_camera');
+        const currentCameraSnapshot = currentCameraId ? await cameras.snapshot('pond_camera') : null;
         sendJson(response, 200, {
           plugs: registry.plugs.map((plug) => ({
             ...plug,
@@ -381,13 +409,13 @@ export function createPondServer({
             state: livePlugs.get(plug.id)?.state ?? null,
           })),
           sensors: registry.sensors.map((sensor) => ({
-            ...sensor,
-            online: sensor.connectionType === 'cloud' && sensor.protocol === 'tuya-cloud'
-              ? Boolean(dewin.online) : false,
+            ...sensor, role: assignments[sensor.id] || 'none', runtimeActive: sensors.has(sensor.id),
+            online: sensor.id === currentSensorId ? Boolean(currentSensorSnapshot?.online) : false,
             rssi: null,
           })),
           cameras: registry.cameras.map((camera) => ({
-            ...camera, online: camera.verificationStatus === 'verified', rssi: null,
+            ...camera, role: assignments[camera.id] || 'none', runtimeActive: cameras.has(camera.id),
+            online: camera.id === currentCameraId && Boolean(currentCameraSnapshot?.configured) && currentCameraSnapshot?.status !== 'ERROR', rssi: null,
           })),
           roles: {
             plugs: VALID_DEVICE_ROLES,
@@ -395,10 +423,12 @@ export function createPondServer({
             cameras: CAMERA_ROLES,
           },
           supportedPlugModels: SUPPORTED_PLUG_MODELS,
+          supportedSensorModels: SUPPORTED_SENSOR_MODELS,
+          supportedCameraModels: SUPPORTED_CAMERA_MODELS,
         });
         return;
       }
-      const verifyHardwareMatch = url.pathname.match(/^\/api\/hardware\/(plugs|cameras)\/verify$/);
+      const verifyHardwareMatch = url.pathname.match(/^\/api\/hardware\/(plugs|sensors|cameras)\/verify$/);
       if (verifyHardwareMatch) {
         if (request.method !== 'POST') {
           sendJson(response, 405, { error: 'Metodo non consentito' });
@@ -406,8 +436,9 @@ export function createPondServer({
         }
         try {
           const payload = await readJsonRequest(request, 4096);
-          if (verifyHardwareMatch[1] === 'plugs') requireSupportedPlugModel(payload.model);
-          const detected = await (verifyHardwareMatch[1] === 'plugs' ? verifyPlug(payload) : verifyCamera(payload));
+          const category = { plugs: 'plug', sensors: 'sensor', cameras: 'camera' }[verifyHardwareMatch[1]];
+          requireSupportedDeviceModel(category, payload.model);
+          const detected = await (verifyHardwareMatch[1] === 'plugs' ? verifyPlug(payload) : verifyHardwareMatch[1] === 'sensors' ? verifySensor(payload) : verifyCamera(payload));
           sendJson(response, 200, { verified: true, detected });
         } catch (requestError) {
           sendJson(response, 400, { verified: false, code: requestError.code || 'VERIFY_FAILED', error: requestError.message });
@@ -420,18 +451,15 @@ export function createPondServer({
         try {
           if (!encodedId && request.method === 'POST') {
             const payload = await readJsonRequest(request, 4096);
-            if (kind === 'plugs' && payload.role && payload.role !== 'none') {
-              throw new HardwareRegistryError('Le nuove prese restano senza ruolo finché non sono attivate nel runtime.', 'RUNTIME_ACTIVATION_REQUIRED');
+            requireSupportedDeviceModel({ plugs: 'plug', sensors: 'sensor', cameras: 'camera' }[kind], payload.model);
+            if (payload.role && payload.role !== 'none') {
+              throw new HardwareRegistryError('I nuovi dispositivi restano senza ruolo finché non sono verificati.', 'RUNTIME_ACTIVATION_REQUIRED');
             }
-            const detected = kind === 'cameras'
-                ? await verifyCamera(payload)
-                : null;
+            const detected = kind === 'sensors' ? await verifySensor(payload) : kind === 'cameras' ? await verifyCamera(payload) : null;
             const created = await hardwareStore.create(kind, payload);
-            const device = detected
-              ? await hardwareStore.markVerified(kind, created.id, detected)
-              : created;
-            if (kind === 'plugs') await reconcileRuntime();
-            sendJson(response, 201, { device, detected });
+            const device = detected ? await hardwareStore.markVerified(kind, created.id, detected) : created;
+            await reconcileRuntime();
+            sendJson(response, 201, { device: { ...device, role: 'none' }, detected });
             return;
           }
           if (!encodedId) throw new HardwareRegistryError('ID dispositivo mancante.', 'MISSING_ID');
@@ -442,52 +470,41 @@ export function createPondServer({
             if (!configured) throw new HardwareRegistryError('Dispositivo non trovato.', 'NOT_FOUND');
             let detected;
             if (kind === 'sensors') {
-              if (configured.connectionType !== 'cloud' || configured.protocol !== 'tuya-cloud' || id !== 'dewin-pond') {
-                throw new HardwareRegistryError('Verifica sensore LAN non ancora disponibile.', 'NOT_IMPLEMENTED');
-              }
-              const snapshot = dewinService.snapshot();
-              if (!snapshot?.available) {
-                throw new HardwareRegistryError('Nessuno snapshot Dewin valido disponibile.', 'CLOUD_SNAPSHOT_UNAVAILABLE');
-              }
-              detected = {
-                provider: configured.provider || 'Tuya Cloud', protocol: configured.protocol,
-                snapshotUpdatedAt: snapshot.updatedAt || null,
-              };
+              detected = await verifySensor(configured);
             } else {
               detected = await (kind === 'plugs' ? verifyPlug(configured) : verifyCamera(configured));
             }
             const device = await hardwareStore.markVerified(kind, id, detected);
-            if (kind === 'plugs') await reconcileRuntime();
+            await reconcileRuntime();
             sendJson(response, 200, { verified: true, device, detected });
             return;
           }
           if (request.method === 'PUT') {
             const payload = await readJsonRequest(request, 4096);
-            const previousRole = kind === 'plugs' && payload.role !== undefined
+            const previousRole = payload.role !== undefined
               ? (await roleStore.read())[id] || 'none'
               : null;
             const device = await hardwareStore.update(kind, id, payload);
-            if (kind === 'plugs') {
-              await reconcileRuntime();
-              if (payload.role !== undefined && payload.role !== previousRole) {
-                if (payload.role !== 'none' && !runtimeHasDevice(id)) {
+            await reconcileRuntime();
+            if (payload.role !== undefined && payload.role !== previousRole) {
+                const active = kind === 'plugs' ? runtimeHasDevice(id) : kind === 'sensors' ? sensors.has(id) : cameras.has(id);
+                if (payload.role !== 'none' && !active) {
                   throw new HardwareRegistryError(
-                    'Verificare e attivare la presa prima di assegnare un ruolo operativo.',
+                    'Verificare e attivare il dispositivo prima di assegnare un ruolo operativo.',
                     'RUNTIME_DEVICE_INACTIVE',
                   );
                 }
                 await roleStore.assign(id, payload.role);
-              }
             }
-            sendJson(response, 200, { device });
+            await reconcileRuntime(); sendJson(response, 200, { device: { ...device, role: payload.role ?? previousRole ?? 'none' } });
             return;
           }
           if (request.method === 'DELETE') {
-            if (kind === 'plugs' && ((await roleStore.read())[id] || 'none') !== 'none') {
-              throw new HardwareRegistryError('Liberare il ruolo prima di rimuovere la presa.', 'ROLE_ASSIGNED');
+            if (((await roleStore.read())[id] || 'none') !== 'none') {
+              throw new HardwareRegistryError('Liberare il ruolo prima di rimuovere il dispositivo.', 'ROLE_ASSIGNED');
             }
             const removed = await hardwareStore.remove(kind, id);
-            if (kind === 'plugs') await reconcileRuntime();
+            await reconcileRuntime();
             sendJson(response, 200, { removed });
             return;
           }
@@ -582,7 +599,8 @@ export function createPondServer({
       if (await serveStatic(request, response, url.pathname)) return;
       response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
       response.end('Non trovato');
-    } catch {
+    } catch (unhandledError) {
+      if (process.env.POND_DEBUG_ERRORS === '1') console.error(unhandledError);
       sendJson(response, 500, { error: 'Errore interno del server' });
     }
   });
@@ -597,32 +615,33 @@ if (isMain) {
       defaults: defaultHardwareRegistry({
         deviceList: defaultDevices,
         cameraIp: process.env.TAPO_CAMERA_IP,
+        dewinDeviceId: process.env.TUYA_DEVICE_ID?.trim() || '',
         dewinConfigured: dewinConfiguredFromEnvironment(),
       }),
     });
     const startupRegistry = await hardwareStore.read();
-    const roleStore = new DeviceRoleStore({ filePath: DEFAULT_ROLE_FILE, deviceList: startupRegistry.plugs });
-    await roleStore.reconcileDevices(startupRegistry.plugs);
+    const allHardware = [...startupRegistry.plugs, ...startupRegistry.sensors, ...startupRegistry.cameras];
+    const roleStore = new DeviceRoleStore({ filePath: DEFAULT_ROLE_FILE, deviceList: allHardware });
+    await roleStore.reconcileDevices(allHardware, hardwareStore.legacyRoleAssignments);
     const deviceManager = new DeviceManager({
       deviceList: startupRegistry.plugs.filter(isRuntimeEligiblePlug).map(runtimePlugConfiguration),
       createClient: createConfiguredClient,
       log: info,
     });
     const weatherService = new WeatherService({ config: WEATHER_CONFIG, log: info, logError: error });
-    const cameraManager = new CameraManager({
-      ip: process.env.TAPO_CAMERA_IP,
-      pythonPath: defaultCameraPython(ROOT),
-      workerPath: path.join(ROOT, 'camera', 'c410_worker.py'),
-      outputDirectory: path.join(ROOT, 'data', 'camera'),
+    const sensorRuntimeManager = new RoleRuntimeManager({ category: 'sensor', autoStart: true,
+      emptySnapshot: UNAVAILABLE_DEWIN_SERVICE.snapshot,
+      createRuntime: (record, signature) => createDewinServiceFromEnvironment({ deviceId: record.tuyaDeviceId,
+        historyStore: new DewinHistoryStore({ directory: path.join(ROOT, 'data', 'dewin-history', record.id, signature) }), log: info, logError: error }),
     });
-    let dewinService = UNAVAILABLE_DEWIN_SERVICE;
-    try {
-      const historyStore = new DewinHistoryStore({ directory: path.join(ROOT, 'data', 'dewin-history') });
-      dewinService = createDewinServiceFromEnvironment({ historyStore, log: info, logError: error });
-    } catch (dewinConfigError) {
-      error(`[DEWIN] servizio non configurato: ${dewinConfigError.message}`);
-    }
-    const server = createPondServer({ roleStore, deviceManager, weatherService, dewinService, cameraManager, hardwareStore });
+    const cameraRuntimeManager = new RoleRuntimeManager({ category: 'camera', emptySnapshot: UNAVAILABLE_CAMERA_MANAGER.snapshot,
+      createRuntime: (record, signature) => new CameraManager({ ip: record.ip, pythonPath: defaultCameraPython(ROOT),
+        workerPath: path.join(ROOT, 'camera', 'c410_worker.py'), outputDirectory: path.join(ROOT, 'data', 'camera', record.id, signature) }),
+    });
+    const startupAssignments = await roleStore.read();
+    await sensorRuntimeManager.reconcile(startupRegistry.sensors.filter((record) => isRuntimeEligible('sensor', record)).map((record) => runtimeConfiguration('sensor', record)), startupAssignments);
+    await cameraRuntimeManager.reconcile(startupRegistry.cameras.filter((record) => isRuntimeEligible('camera', record)).map((record) => runtimeConfiguration('camera', record)), startupAssignments);
+    const server = createPondServer({ roleStore, deviceManager, weatherService, sensorRuntimeManager, cameraRuntimeManager, hardwareStore });
     const safetyMonitor = createSafetyMonitor({
       deviceList: [],
       roleStore,
@@ -634,20 +653,19 @@ if (isMain) {
       info('Pond Control disponibile su http://localhost:3000');
       void deviceManager.startPolling(() => safetyMonitor.runCycle());
       void weatherService.start();
-      void dewinService.start();
     });
     server.on('close', () => {
       deviceManager.stop();
       weatherService.stop();
-      dewinService.stop();
-      void cameraManager.stop();
+      void sensorRuntimeManager.close();
+      void cameraRuntimeManager.close();
       info('Pond Control arrestato');
     });
     const shutdown = () => {
       deviceManager.stop();
       weatherService.stop();
-      dewinService.stop();
-      void cameraManager.stop();
+      void sensorRuntimeManager.close();
+      void cameraRuntimeManager.close();
       server.close();
     };
     process.once('SIGINT', shutdown);

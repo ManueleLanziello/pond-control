@@ -24,5 +24,6 @@ export function plugDashboardLabel(device, hardware) {
 
 export function sensorDashboardLabel(role, hardware, fallbackAlias = '') {
   const configured = hardware?.sensors?.find((sensor) => sensor.role === role);
+  if (hardware && !configured) return 'Nessun sensore assegnato';
   return identityLabel(configured?.alias || fallbackAlias, configured?.model);
 }

@@ -2,12 +2,12 @@ import crypto from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
-import { requireSupportedPlugModel } from './supported-device-catalog.js';
+import { requireSupportedDeviceModel } from './supported-device-catalog.js';
 
 export const HARDWARE_KINDS = Object.freeze(['plugs', 'sensors', 'cameras']);
 export const SENSOR_ROLES = Object.freeze(['none', 'pond_temperature']);
 export const CAMERA_ROLES = Object.freeze(['none', 'pond_camera']);
-const HARDWARE_REGISTRY_VERSION = 3;
+const HARDWARE_REGISTRY_VERSION = 4;
 const MAC_PATTERN = /^(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}$/i;
 
 export class HardwareRegistryError extends Error {
@@ -36,49 +36,25 @@ function requiredText(value, label) {
   return normalized;
 }
 
-function allowedRoles(kind) {
-  if (kind === 'sensors') return SENSOR_ROLES;
-  if (kind === 'cameras') return CAMERA_ROLES;
-  return ['none'];
-}
-
 function normalizeRecord(kind, input, { allowIncomplete = false } = {}) {
   const alias = requiredText(input.alias, 'alias');
-  const connectionType = kind === 'sensors' ? String(input.connectionType || 'lan').toLowerCase() : 'lan';
-  if (!['lan', 'cloud'].includes(connectionType)) {
-    throw new HardwareRegistryError('Tipo di connessione non valido.', 'INVALID_CONNECTION_TYPE');
-  }
-  const type = kind === 'sensors' ? requiredText(input.type || input.model, 'tipo') : undefined;
-  let model = kind === 'sensors' ? String(input.model || '').trim() : requiredText(input.model, 'modello');
-  let plugDefinition = null;
-  if (kind === 'plugs') {
-    try {
-      plugDefinition = requireSupportedPlugModel(model);
-      model = plugDefinition.model;
-    } catch (error) {
-      throw new HardwareRegistryError(error.message, error.code);
-    }
-  }
-  const ip = connectionType === 'cloud' && !input.ip ? '' : validateIpv4(input.ip);
+  const category = { plugs: 'plug', sensors: 'sensor', cameras: 'camera' }[kind];
+  let definition;
+  try { definition = requireSupportedDeviceModel(category, input.model); } catch (error) { throw new HardwareRegistryError(error.message, error.code); }
+  const model = definition.model; const connectionType = definition.connectionType;
+  const ip = connectionType === 'cloud' ? '' : validateIpv4(input.ip);
   let mac = '';
-  const macRequired = kind === 'plugs' || (kind === 'sensors' && connectionType === 'lan');
+  const macRequired = kind === 'plugs' || kind === 'cameras';
   if (input.mac || (!allowIncomplete && macRequired)) mac = normalizeMac(input.mac);
-  const protocol = kind === 'plugs'
-    ? plugDefinition.protocol
-    : requiredText(input.protocol || (kind === 'cameras' ? 'pytapo-https' : 'none'), 'protocollo');
-  const provider = kind === 'sensors' ? String(input.provider || '').trim() : undefined;
-  const role = kind === 'plugs' ? undefined : String(input.role || 'none');
-  if (role !== undefined && !allowedRoles(kind).includes(role)) {
-    throw new HardwareRegistryError('Ruolo non valido.', 'INVALID_ROLE');
-  }
+  const tuyaDeviceId = kind === 'sensors'
+    ? (allowIncomplete ? String(input.tuyaDeviceId || '').trim() : requiredText(input.tuyaDeviceId, 'tuyaDeviceId'))
+    : undefined;
   return {
-    id: requiredText(input.id, 'id'), alias, model, ...(type === undefined ? {} : { type }), ip, mac, protocol,
-    ...(plugDefinition ? {
-      manufacturer: plugDefinition.manufacturer, runtimeAdapter: plugDefinition.adapter, connectionType: 'lan',
-    } : {}),
-    ...(kind === 'sensors' ? { connectionType, provider } : {}),
-    ...(role === undefined ? {} : { role }),
-    configurationStatus: connectionType === 'cloud' || mac ? 'complete' : 'incomplete',
+    id: requiredText(input.id, 'id'), alias, model, ip, mac, protocol: definition.protocol,
+    manufacturer: definition.manufacturer, runtimeAdapter: definition.adapter, connectionType,
+    ...(definition.provider ? { provider: definition.provider } : {}), ...(definition.type ? { type: definition.type } : {}),
+    ...(tuyaDeviceId === undefined ? {} : { tuyaDeviceId }),
+    configurationStatus: (connectionType === 'cloud' ? Boolean(tuyaDeviceId) || (allowIncomplete && input.verificationStatus === 'verified') : Boolean(mac)) ? 'complete' : 'incomplete',
     verificationStatus: input.verificationStatus === 'verified' ? 'verified' : 'pending',
     verifiedAt: input.verificationStatus === 'verified' ? input.verifiedAt || null : null,
     detected: input.verificationStatus === 'verified' ? input.detected || null : null,
@@ -90,18 +66,13 @@ function validateCollection(kind, records, options) {
   const ids = new Set();
   const ips = new Set();
   const macs = new Set();
-  const roles = new Set();
   for (const record of normalized) {
     if (ids.has(record.id)) throw new HardwareRegistryError('ID dispositivo duplicato.', 'DUPLICATE_ID');
     if (record.ip && ips.has(record.ip)) throw new HardwareRegistryError('Indirizzo IP già configurato.', 'DUPLICATE_IP');
     if (record.mac && macs.has(record.mac)) throw new HardwareRegistryError('Indirizzo MAC già configurato.', 'DUPLICATE_MAC');
-    if (record.role && record.role !== 'none' && roles.has(record.role)) {
-      throw new HardwareRegistryError('Ruolo già assegnato.', 'DUPLICATE_ROLE');
-    }
     ids.add(record.id);
     if (record.ip) ips.add(record.ip);
     if (record.mac) macs.add(record.mac);
-    if (record.role && record.role !== 'none') roles.add(record.role);
   }
   return normalized;
 }
@@ -129,8 +100,8 @@ export function validateHardwareRegistry(value, options = {}) {
   return registry;
 }
 
-export function defaultHardwareRegistry({ deviceList, cameraIp, dewinConfigured = false }) {
-  return validateHardwareRegistry({
+export function defaultHardwareRegistry({ deviceList, cameraIp, cameraMac = '', dewinDeviceId = '', dewinConfigured = false }) {
+  const registry = validateHardwareRegistry({
     plugs: deviceList.map((device) => ({
       id: device.id,
       alias: device.fallbackName,
@@ -139,22 +110,28 @@ export function defaultHardwareRegistry({ deviceList, cameraIp, dewinConfigured 
       mac: '',
       protocol: device.protocol,
     })),
-    sensors: dewinConfigured ? [{
+    sensors: (dewinDeviceId || dewinConfigured) ? [{
       id: 'dewin-pond', alias: 'Dewin Pond', type: 'Sensore temperatura con sonda esterna',
-      model: '', ip: '', mac: '', protocol: 'tuya-cloud', provider: 'Tuya Cloud',
-      connectionType: 'cloud', role: 'pond_temperature', verificationStatus: 'verified',
+      model: 'T & H Sensor with external probe', tuyaDeviceId: dewinDeviceId, ip: '', mac: '',
+      protocol: 'tuya-cloud', provider: 'Tuya Cloud', connectionType: 'cloud', role: 'pond_temperature', verificationStatus: 'verified',
       detected: { provider: 'Tuya Cloud' },
     }] : [],
     cameras: cameraIp ? [{
       id: 'tapo-c410-pond', alias: 'C410 Pond', model: 'C410', ip: cameraIp,
-      mac: '', protocol: 'pytapo-https', role: 'pond_camera',
+      mac: cameraMac, protocol: 'pytapo-https', role: 'pond_camera',
     }] : [],
   }, { allowIncomplete: true });
+  Object.defineProperty(registry, 'legacyRoleAssignments', { value: {
+    ...((dewinDeviceId || dewinConfigured) ? { 'dewin-pond': 'pond_temperature' } : {}),
+    ...(cameraIp ? { 'tapo-c410-pond': 'pond_camera' } : {}),
+  }, enumerable: false });
+  return registry;
 }
 
 export class HardwareRegistryStore {
   constructor({ filePath, defaults, idFactory = () => crypto.randomUUID() }) {
     this.filePath = filePath;
+    this.legacyRoleAssignments = { ...(defaults.legacyRoleAssignments || {}), ...Object.fromEntries(HARDWARE_KINDS.flatMap((kind) => (defaults[kind] || []).filter((record) => record.role && record.role !== 'none').map((record) => [record.id, record.role]))) };
     this.defaults = validateHardwareRegistry(defaults, { allowIncomplete: true });
     this.idFactory = idFactory;
     this.writeQueue = Promise.resolve();
@@ -164,15 +141,19 @@ export class HardwareRegistryStore {
   async read() {
     try {
       const parsed = JSON.parse(await readFile(this.filePath, 'utf8'));
+      for (const kind of HARDWARE_KINDS) for (const record of parsed[kind] || []) if (record.role && record.role !== 'none') this.legacyRoleAssignments[record.id] = record.role;
+      for (const sensor of parsed.sensors || []) if (!sensor.model && sensor.protocol === 'tuya-cloud') sensor.model = 'T & H Sensor with external probe';
+      // Legacy Dewin identity was non-secret but lived in .env. Import it only when absent.
+      for (const sensor of parsed.sensors || []) if (!sensor.tuyaDeviceId && sensor.id === 'dewin-pond' && process.env.TUYA_DEVICE_ID?.trim()) sensor.tuyaDeviceId = process.env.TUYA_DEVICE_ID.trim();
       const registry = validateHardwareRegistry(parsed, { allowIncomplete: true });
       if (Number(parsed.version || 1) < HARDWARE_REGISTRY_VERSION) {
         const defaultDewin = this.defaults.sensors.find((sensor) => sensor.id === 'dewin-pond');
         if (defaultDewin && !registry.sensors.some((sensor) => sensor.id === defaultDewin.id)) {
           registry.sensors.push(structuredClone(defaultDewin));
         }
-        const migrated = validateHardwareRegistry(registry, { allowIncomplete: true });
-        await this.#persist(migrated);
-        return migrated;
+        // La scrittura v4 avviene alla prima mutazione, dopo che il role store ha
+        // importato i ruoli legacy: così un arresto a metà startup non perde ruoli.
+        return validateHardwareRegistry(registry, { allowIncomplete: true });
       }
       return registry;
     } catch (error) {
@@ -204,7 +185,7 @@ export class HardwareRegistryStore {
       const index = registry[kind].findIndex((record) => record.id === id);
       if (index < 0) throw new HardwareRegistryError('Dispositivo non trovato.', 'NOT_FOUND');
       const previous = registry[kind][index];
-      const technicalFields = ['ip', 'mac', 'model', 'type', 'connectionType', 'provider', ...(kind === 'plugs' ? [] : ['protocol'])];
+      const technicalFields = ['ip', 'mac', 'model', 'tuyaDeviceId'];
       const physicalChanged = technicalFields
         .some((field) => input[field] !== undefined && input[field] !== previous[field]);
       registry[kind][index] = normalizeRecord(kind, {
@@ -242,9 +223,6 @@ export class HardwareRegistryStore {
       const index = registry[kind].findIndex((record) => record.id === id);
       if (index < 0) throw new HardwareRegistryError('Dispositivo non trovato.', 'NOT_FOUND');
       const [removed] = registry[kind].splice(index, 1);
-      if (removed.role && removed.role !== 'none') {
-        throw new HardwareRegistryError('Liberare il ruolo prima di rimuovere il dispositivo.', 'ROLE_ASSIGNED');
-      }
       return removed;
     });
   }

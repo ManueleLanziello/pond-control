@@ -139,11 +139,11 @@ test('Settings copies Dewin runtime online independently from administrative rol
   }, { dewinConfigured: true, dewinSnapshot: { available: true, online: true } });
 });
 
-test('hardware API persistently repairs complete legacy Dewin from its cached snapshot', async () => {
+test('catalog-owned Dewin provider input is ignored without invalidating runtime', async () => {
   await withHardwareApi(async ({ baseUrl, hardwareStore, dewinService }) => {
     await hardwareStore.update('sensors', 'dewin-pond', { provider: 'Tuya Cloud legacy' });
     await hardwareStore.update('sensors', 'dewin-pond', { provider: 'Tuya Cloud' });
-    assert.equal((await hardwareStore.read()).sensors[0].verificationStatus, 'pending');
+    assert.equal((await hardwareStore.read()).sensors[0].verificationStatus, 'verified');
 
     const payload = await (await fetch(`${baseUrl}/api/hardware`)).json();
     assert.equal(payload.sensors[0].verificationStatus, 'verified');
@@ -156,13 +156,14 @@ test('hardware API persistently repairs complete legacy Dewin from its cached sn
   });
 });
 
-test('hardware API does not arbitrarily verify legacy Dewin without a usable cached snapshot', async () => {
+test('catalog-owned Dewin fields cannot make an unavailable runtime appear online', async () => {
   await withHardwareApi(async ({ baseUrl, hardwareStore }) => {
     await hardwareStore.update('sensors', 'dewin-pond', { provider: 'Tuya Cloud legacy' });
     await hardwareStore.update('sensors', 'dewin-pond', { provider: 'Tuya Cloud' });
     const payload = await (await fetch(`${baseUrl}/api/hardware`)).json();
     assert.equal(payload.sensors[0].configurationStatus, 'complete');
-    assert.equal(payload.sensors[0].verificationStatus, 'pending');
+    assert.equal(payload.sensors[0].verificationStatus, 'verified');
+    assert.equal(payload.sensors[0].online, false);
   }, { dewinConfigured: true, dewinSnapshot: { available: false, online: false } });
 });
 
@@ -355,7 +356,7 @@ test('camera API accepts an IP edit while MAC is still unknown without running a
   });
 });
 
-test('sensor persistence is available while verification remains explicitly unavailable', async () => {
+test('unknown sensor models are rejected by the backend', async () => {
   await withHardwareApi(async ({ baseUrl, hardwareStore }) => {
     const sensor = {
       alias: 'Sonda Pond', model: 'T1', ip: '192.168.1.25', mac: 'AA:BB:CC:DD:EE:25',
@@ -364,10 +365,9 @@ test('sensor persistence is available while verification remains explicitly unav
     const created = await jsonRequest(baseUrl, '/api/hardware/sensors', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(sensor),
     });
-    assert.equal(created.response.status, 201);
-    assert.equal((await hardwareStore.read()).sensors[0].verificationStatus, 'pending');
-    const verified = await jsonRequest(baseUrl, `/api/hardware/sensors/${created.payload.device.id}/verify`, { method: 'POST' });
-    assert.equal(verified.response.status, 501);
+    assert.equal(created.response.status, 400);
+    assert.equal(created.payload.code, 'UNSUPPORTED_MODEL');
+    assert.equal((await hardwareStore.read()).sensors.length, 0);
   });
 });
 
