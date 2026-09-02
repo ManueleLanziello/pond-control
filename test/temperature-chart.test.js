@@ -36,7 +36,7 @@ test('chart keeps Acqua, Terreno and server-provided Ambiente series without inv
   assert.deepEqual(model.current, { pond: 27.2, terrain: 28.9, outdoor: 25.3 });
 });
 
-test('significant acquisition gaps break the SVG path instead of interpolating them', () => {
+test('visual smoothing uses cubic curves without bridging significant acquisition gaps', () => {
   const samples = [
     { timestamp: '2026-08-27T08:00:00.000Z', minute: 600, pond: 25 },
     { timestamp: '2026-08-27T08:10:00.000Z', minute: 610, pond: 25.1 },
@@ -44,12 +44,13 @@ test('significant acquisition gaps break the SVG path instead of interpolating t
   ];
   const path = buildTemperatureSeriesPath(samples, 'pond');
   assert.equal((path.match(/\bM\b/g) || []).length, 2);
-  assert.equal((path.match(/\bL\b/g) || []).length, 1);
+  assert.equal((path.match(/\bC\b/g) || []).length, 1);
 });
 
-test('marker density stays clean at the 144-sample daily baseline', () => {
-  assert.equal(temperatureMarkerStride(12), 1);
-  assert.equal(temperatureMarkerStride(144), 6);
+test('chart source uses no visible data markers and summary ranges omit Min/Max labels', async () => {
+  const chart = await readFile(new URL('../public/temperature-chart.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(chart, /chart-point|svgElement\('circle'/);
+  assert.match(chart, /\$\{formatTemperature\(stats\.min\)\} · \$\{formatTemperature\(stats\.max\)\}/);
 });
 
 test('responsive insights layout aligns two desktop columns and stacks on mobile', async () => {
@@ -76,7 +77,9 @@ test('responsive insights layout aligns two desktop columns and stacks on mobile
   assert.match(css, /\.chart-glow\s*\{[^}]*stroke-width:\s*8/);
   assert.match(css, /filter:\s*url\(#pond-neon-blur\)/);
   assert.match(css, /\.chart-line-ambient\s*\{[^}]*stroke:\s*#ff9b3f/);
-  assert.match(css, /\.chart-line-outdoor\s*\{[^}]*stroke:\s*#b893ff/);
+  assert.match(css, /\.chart-line-pond\s*\{[^}]*stroke:\s*#28d7ff/);
+  assert.match(css, /\.chart-line-outdoor\s*\{[^}]*stroke:\s*#ffd24a/);
+  assert.doesNotMatch(css, /chart-line-outdoor\s*\{[^}]*stroke-dasharray/);
   assert.match(chartSource, /pointermove/);
   assert.match(chartSource, /pointerdown/);
 });

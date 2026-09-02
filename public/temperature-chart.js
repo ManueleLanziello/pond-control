@@ -82,8 +82,22 @@ export function buildTemperatureSeriesPath(samples, field) {
   return samples.map((sample, index) => {
     const previous = samples[index - 1];
     const gap = previous ? Date.parse(sample.timestamp) - Date.parse(previous.timestamp) : 0;
-    const command = !previous || gap > SERIES_GAP_MS ? 'M' : 'L';
-    return `${command} ${xPosition(sample.minute).toFixed(2)} ${yPosition(sample[field]).toFixed(2)}`;
+    const x = xPosition(sample.minute); const y = yPosition(sample[field]);
+    if (!previous || gap > SERIES_GAP_MS) return `M ${x.toFixed(2)} ${y.toFixed(2)}`;
+    const beforePrevious = samples[index - 2];
+    const previousGap = beforePrevious ? Date.parse(previous.timestamp) - Date.parse(beforePrevious.timestamp) : 0;
+    const controlBefore = !beforePrevious || previousGap > SERIES_GAP_MS ? previous : beforePrevious;
+    const next = samples[index + 1];
+    const nextGap = next ? Date.parse(next.timestamp) - Date.parse(sample.timestamp) : 0;
+    const controlAfter = !next || nextGap > SERIES_GAP_MS ? sample : next;
+    const previousX = xPosition(previous.minute); const previousY = yPosition(previous[field]);
+    const beforePreviousX = xPosition(controlBefore.minute); const beforePreviousY = yPosition(controlBefore[field]);
+    const nextX = xPosition(controlAfter.minute); const nextY = yPosition(controlAfter[field]);
+    const controlOneX = previousX + (x - beforePreviousX) / 6;
+    const controlOneY = previousY + (y - beforePreviousY) / 6;
+    const controlTwoX = x - (nextX - previousX) / 6;
+    const controlTwoY = y - (nextY - previousY) / 6;
+    return `C ${controlOneX.toFixed(2)} ${controlOneY.toFixed(2)} ${controlTwoX.toFixed(2)} ${controlTwoY.toFixed(2)} ${x.toFixed(2)} ${y.toFixed(2)}`;
   }).join(' ');
 }
 
@@ -99,7 +113,7 @@ function statBlock(label, className, current, stats) {
   const value = document.createElement('strong');
   value.textContent = formatTemperature(current);
   const range = document.createElement('small');
-  range.textContent = `Min ${formatTemperature(stats.min)} · Max ${formatTemperature(stats.max)}`;
+  range.textContent = `${formatTemperature(stats.min)} · ${formatTemperature(stats.max)}`;
   block.append(name, value, range);
   return block;
 }
@@ -182,20 +196,9 @@ export function renderTemperatureChart(container, history, snapshot, outdoor, se
       svgElement('path', { class: 'chart-line chart-line-pond', d: buildTemperatureSeriesPath(model.samples, 'pond') }),
       svgElement('path', { class: 'chart-line chart-line-ambient', d: buildTemperatureSeriesPath(model.samples, 'ambient') }),
     );
-    const markerStride = temperatureMarkerStride(model.samples.length);
-    for (const [index, sample] of model.samples.entries()) {
-      if (index % markerStride !== 0 && index !== model.samples.length - 1) continue;
-      plot.append(
-        svgElement('circle', { class: 'chart-point chart-point-pond', cx: xPosition(sample.minute), cy: yPosition(sample.pond), r: 1.8 }),
-        svgElement('circle', { class: 'chart-point chart-point-ambient', cx: xPosition(sample.minute), cy: yPosition(sample.ambient), r: 1.8 }),
-      );
-    }
   }
   if (model.outdoorSamples.length) {
     plot.append(svgElement('path', { class: 'chart-line chart-line-outdoor', d: buildTemperatureSeriesPath(model.outdoorSamples, 'temperature') }));
-    for (const sample of model.outdoorSamples) {
-      plot.append(svgElement('circle', { class: 'chart-point chart-point-outdoor', cx: xPosition(sample.minute), cy: yPosition(sample.temperature), r: 1.8 }));
-    }
   }
   const marker = svgElement('line', {
     class: 'chart-hover-marker', x1: PLOT.left, y1: PLOT.top,

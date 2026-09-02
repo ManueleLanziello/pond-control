@@ -131,16 +131,16 @@ body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 12% 0
 .temperature-stat span { font-size: .7rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .temperature-stat strong { font-size: 1.15rem; }
 .temperature-stat small { color: #8293a1; font-size: .66rem; white-space: nowrap; }
-.temperature-stat.series-pond span, .temperature-stat.series-pond strong { color: var(--cyan); }
+.temperature-stat.series-pond span, .temperature-stat.series-pond strong { color: #28d7ff; }
 .temperature-stat.series-ambient span, .temperature-stat.series-ambient strong { color: var(--orange); }
-.temperature-stat.series-outdoor span, .temperature-stat.series-outdoor strong { color: #b893ff; }
+.temperature-stat.series-outdoor span, .temperature-stat.series-outdoor strong { color: #ffd24a; }
 .temperature-chart-wrap { position: relative; display: flex; min-width: 0; min-height: 430px; flex: 1; flex-direction: column; border: 1px solid rgba(81,126,158,.13); border-radius: 16px; background: rgba(3,10,17,.52); overflow: hidden; }
 .temperature-chart-legend { display: flex; min-height: 34px; align-items: center; justify-content: center; gap: 24px; color: #9dabb6; font-size: .69rem; font-weight: 760; }
 .temperature-chart-legend span { display: inline-flex; align-items: center; gap: 7px; }
 .temperature-chart-legend i { display: block; width: 25px; height: 2px; border-radius: 999px; }
-.temperature-chart-legend .legend-pond i { background: #7ee8ff; box-shadow: 0 0 8px rgba(23,200,244,.72); }
+.temperature-chart-legend .legend-pond i { background: #28d7ff; box-shadow: 0 0 8px rgba(40,215,255,.8); }
 .temperature-chart-legend .legend-ambient i { background: #ff9b3f; }
-.temperature-chart-legend .legend-outdoor i { background: #b893ff; }
+.temperature-chart-legend .legend-outdoor i { background: #ffd24a; }
 .temperature-chart-svg { display: block; width: 100%; min-height: 390px; flex: 1; touch-action: none; }
 .temperature-day-night { pointer-events: none; }
 .chart-grid line { stroke: rgba(134,169,194,.12); stroke-width: 1; vector-effect: non-scaling-stroke; }
@@ -149,23 +149,19 @@ body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 12% 0
 .chart-grid-x line { stroke: rgba(134,169,194,.085); }
 .chart-glow, .chart-line { fill: none; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 .chart-glow { stroke-width: 8; opacity: .48; }
-.chart-glow-pond { stroke: var(--cyan); filter: url(#pond-neon-blur); }
+.chart-glow-pond { stroke: #28d7ff; filter: url(#pond-neon-blur); }
 .chart-line { stroke-width: 2.15; }
-.chart-line-pond { stroke: #7ee8ff; stroke-width: 2.25; }
-.chart-line-ambient { stroke: #ff9b3f; stroke-width: 1.8; }
-.chart-line-outdoor { stroke: #b893ff; stroke-width: 1.8; stroke-dasharray: 5 4; }
-.chart-point { stroke-width: .9; opacity: .68; vector-effect: non-scaling-stroke; }
-.chart-point-pond { fill: var(--cyan); stroke: #b8effd; }
-.chart-point-ambient { fill: var(--orange); stroke: #ffd0a3; }
-.chart-point-outdoor { fill: #b893ff; stroke: #dfd0ff; }
+.chart-line-pond { stroke: #28d7ff; stroke-width: 2.15; }
+.chart-line-ambient { stroke: #ff9b3f; stroke-width: 2.15; }
+.chart-line-outdoor { stroke: #ffd24a; stroke-width: 1.55; }
 .chart-hover-marker { opacity: 0; stroke: rgba(255,255,255,.42); stroke-width: 1; stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; }
 .chart-hover-marker.is-visible { opacity: 1; }
 .temperature-tooltip { position: absolute; top: 18px; z-index: 2; display: none; gap: 3px; min-width: 150px; padding: 9px 11px; border: 1px solid rgba(23,200,244,.38); border-radius: 10px; background: rgba(4,12,20,.96); box-shadow: 0 10px 28px rgba(0,0,0,.45); color: #dce9f1; font-size: .72rem; pointer-events: none; transform: translateX(-50%); }
 .temperature-tooltip.is-visible { display: grid; }
 .temperature-tooltip strong { color: #fff; }
-.temperature-tooltip span:first-of-type { color: var(--cyan); }
+.temperature-tooltip span:first-of-type { color: #28d7ff; }
 .temperature-tooltip span:nth-of-type(2) { color: var(--orange); }
-.temperature-tooltip span:last-child { color: #b893ff; }
+.temperature-tooltip span:last-child { color: #ffd24a; }
 .chart-empty { position: absolute; inset: 50% auto auto 50%; margin: 0; color: #718391; font-size: .78rem; font-weight: 750; transform: translate(-50%,-50%); }
 .camera-card { display: grid; align-content: start; border-color: rgba(23,200,244,.24); }
 .camera-card.is-live { border-color: rgba(41,223,146,.52); box-shadow: 0 20px 55px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.02), 0 0 26px rgba(41,223,146,.08); }
