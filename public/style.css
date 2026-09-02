@@ -132,14 +132,14 @@ body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 12% 0
 .temperature-stat strong { font-size: 1.15rem; }
 .temperature-stat small { color: #8293a1; font-size: .66rem; white-space: nowrap; }
 .temperature-stat.series-pond span, .temperature-stat.series-pond strong { color: #28d7ff; }
-.temperature-stat.series-ambient span, .temperature-stat.series-ambient strong { color: var(--orange); }
+.temperature-stat.series-ambient span, .temperature-stat.series-ambient strong { color: #45d67a; }
 .temperature-stat.series-outdoor span, .temperature-stat.series-outdoor strong { color: #ffd24a; }
 .temperature-chart-wrap { position: relative; display: flex; min-width: 0; min-height: 430px; flex: 1; flex-direction: column; border: 1px solid rgba(81,126,158,.13); border-radius: 16px; background: rgba(3,10,17,.52); overflow: hidden; }
 .temperature-chart-legend { display: flex; min-height: 34px; align-items: center; justify-content: center; gap: 24px; color: #9dabb6; font-size: .69rem; font-weight: 760; }
 .temperature-chart-legend span { display: inline-flex; align-items: center; gap: 7px; }
 .temperature-chart-legend i { display: block; width: 25px; height: 2px; border-radius: 999px; }
 .temperature-chart-legend .legend-pond i { background: #28d7ff; box-shadow: 0 0 8px rgba(40,215,255,.8); }
-.temperature-chart-legend .legend-ambient i { background: #ff9b3f; }
+.temperature-chart-legend .legend-ambient i { background: #45d67a; }
 .temperature-chart-legend .legend-outdoor i { background: #ffd24a; }
 .temperature-chart-svg { display: block; width: 100%; min-height: 390px; flex: 1; touch-action: none; }
 .temperature-day-night { pointer-events: none; }
@@ -152,7 +152,7 @@ body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 12% 0
 .chart-glow-pond { stroke: #28d7ff; filter: url(#pond-neon-blur); }
 .chart-line { stroke-width: 2.15; }
 .chart-line-pond { stroke: #28d7ff; stroke-width: 2.15; }
-.chart-line-ambient { stroke: #ff9b3f; stroke-width: 2.15; }
+.chart-line-ambient { stroke: #45d67a; stroke-width: 2.15; }
 .chart-line-outdoor { stroke: #ffd24a; stroke-width: 1.55; }
 .chart-hover-marker { opacity: 0; stroke: rgba(255,255,255,.42); stroke-width: 1; stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; }
 .chart-hover-marker.is-visible { opacity: 1; }
@@ -160,7 +160,7 @@ body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 12% 0
 .temperature-tooltip.is-visible { display: grid; }
 .temperature-tooltip strong { color: #fff; }
 .temperature-tooltip span:first-of-type { color: #28d7ff; }
-.temperature-tooltip span:nth-of-type(2) { color: var(--orange); }
+.temperature-tooltip span:nth-of-type(2) { color: #45d67a; }
 .temperature-tooltip span:last-child { color: #ffd24a; }
 .chart-empty { position: absolute; inset: 50% auto auto 50%; margin: 0; color: #718391; font-size: .78rem; font-weight: 750; transform: translate(-50%,-50%); }
 .camera-card { display: grid; align-content: start; border-color: rgba(23,200,244,.24); }
