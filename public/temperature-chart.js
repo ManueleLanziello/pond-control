@@ -36,20 +36,28 @@ function seriesStats(values) {
   return { min: Math.min(...values), max: Math.max(...values) };
 }
 
-export function buildTemperatureChartModel(history, snapshot) {
-  const samples = (history?.samples || [])
-    .filter((sample) => sample?.timestamp && Number.isFinite(sample.pond) && Number.isFinite(sample.ambient))
-    .map((sample) => ({ ...sample, minute: minuteOfDay(sample.timestamp) }))
+function normalizedSamples(samples, field) {
+  return (samples || [])
+    .filter((sample) => sample?.timestamp && Number.isFinite(sample[field]))
+    .map((sample) => ({ ...sample, minute: Number.isFinite(sample.minute) ? sample.minute : minuteOfDay(sample.timestamp) }))
     .sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
+}
+
+export function buildTemperatureChartModel(history, snapshot, outdoor) {
+  const samples = normalizedSamples(history?.samples, 'pond').filter((sample) => Number.isFinite(sample.ambient));
+  const outdoorSamples = outdoor?.available && !outdoor.stale ? normalizedSamples(outdoor.samples, 'temperature') : [];
   return {
     date: history?.date ?? null,
     samples,
+    outdoorSamples,
     current: {
       pond: snapshot?.externalProbeTemperature?.value ?? samples.at(-1)?.pond ?? null,
-      ambient: snapshot?.ambientTemperature?.value ?? samples.at(-1)?.ambient ?? null,
+      terrain: snapshot?.ambientTemperature?.value ?? samples.at(-1)?.ambient ?? null,
+      outdoor: outdoorSamples.at(-1)?.temperature ?? null,
     },
     pond: seriesStats(samples.map((sample) => sample.pond)),
-    ambient: seriesStats(samples.map((sample) => sample.ambient)),
+    terrain: seriesStats(samples.map((sample) => sample.ambient)),
+    outdoor: seriesStats(outdoorSamples.map((sample) => sample.temperature)),
   };
 }
 
@@ -96,8 +104,8 @@ function statBlock(label, className, current, stats) {
   return block;
 }
 
-export function renderTemperatureChart(container, history, snapshot) {
-  const model = buildTemperatureChartModel(history, snapshot);
+export function renderTemperatureChart(container, history, snapshot, outdoor, sensorSubtitle = 'Nessun sensore assegnato') {
+  const model = buildTemperatureChartModel(history, snapshot, outdoor);
   const header = document.createElement('header');
   header.className = 'temperature-chart-header';
   const titleWrap = document.createElement('div');
@@ -111,14 +119,15 @@ export function renderTemperatureChart(container, history, snapshot) {
   title.textContent = 'Temperature Oggi';
   const subtitle = document.createElement('p');
   subtitle.className = 'temperature-chart-subtitle';
-  subtitle.textContent = 'Sonda DEWIN';
+  subtitle.textContent = sensorSubtitle;
   titleText.append(title, subtitle);
   titleWrap.append(icon, titleText);
   const stats = document.createElement('div');
   stats.className = 'temperature-stats';
   stats.append(
-    statBlock('Pond', 'series-pond', model.current.pond, model.pond),
-    statBlock('Ambiente', 'series-ambient', model.current.ambient, model.ambient),
+    statBlock('Acqua', 'series-pond', model.current.pond, model.pond),
+    statBlock('Terreno', 'series-ambient', model.current.terrain, model.terrain),
+    statBlock('Ambiente', 'series-outdoor', model.current.outdoor, model.outdoor),
   );
   header.append(titleWrap, stats);
 
@@ -126,7 +135,7 @@ export function renderTemperatureChart(container, history, snapshot) {
   chartWrap.className = 'temperature-chart-wrap';
   const svg = svgElement('svg', {
     class: 'temperature-chart-svg', viewBox: `0 0 ${WIDTH} ${HEIGHT}`,
-    role: 'img', 'aria-label': 'Grafico giornaliero temperatura Pond e ambiente dalle 00:00 alle 24:00, da meno 5 a 35 gradi Celsius',
+    role: 'img', 'aria-label': 'Grafico giornaliero Acqua, Terreno e Ambiente dalle 00:00 alle 24:00, da meno 5 a 35 gradi Celsius',
   });
   const defs = svgElement('defs');
   for (const [id, deviation] of [['pond-neon-blur', 3.2]]) {
@@ -182,6 +191,12 @@ export function renderTemperatureChart(container, history, snapshot) {
       );
     }
   }
+  if (model.outdoorSamples.length) {
+    plot.append(svgElement('path', { class: 'chart-line chart-line-outdoor', d: buildTemperatureSeriesPath(model.outdoorSamples, 'temperature') }));
+    for (const sample of model.outdoorSamples) {
+      plot.append(svgElement('circle', { class: 'chart-point chart-point-outdoor', cx: xPosition(sample.minute), cy: yPosition(sample.temperature), r: 1.8 }));
+    }
+  }
   const marker = svgElement('line', {
     class: 'chart-hover-marker', x1: PLOT.left, y1: PLOT.top,
     x2: PLOT.left, y2: HEIGHT - PLOT.bottom,
@@ -192,11 +207,12 @@ export function renderTemperatureChart(container, history, snapshot) {
   tooltip.className = 'temperature-tooltip';
   tooltip.setAttribute('aria-live', 'polite');
   const showTooltip = (event) => {
-    if (!model.samples.length) return;
+    const interactiveSamples = [...model.samples, ...model.outdoorSamples];
+    if (!interactiveSamples.length) return;
     const bounds = svg.getBoundingClientRect();
     const minute = Math.max(0, Math.min(1440, ((event.clientX - bounds.left) / bounds.width * WIDTH - PLOT.left)
       / (WIDTH - PLOT.left - PLOT.right) * 1440));
-    const sample = model.samples.reduce((nearest, candidate) => (
+    const sample = interactiveSamples.reduce((nearest, candidate) => (
       Math.abs(candidate.minute - minute) < Math.abs(nearest.minute - minute) ? candidate : nearest
     ));
     const x = xPosition(sample.minute);
@@ -207,11 +223,14 @@ export function renderTemperatureChart(container, history, snapshot) {
     tooltip.replaceChildren();
     const time = document.createElement('strong');
     time.textContent = `${String(hour).padStart(2, '0')}:${String(sampleMinute).padStart(2, '0')}`;
-    const pond = document.createElement('span');
-    pond.textContent = `Pond: ${formatTemperature(sample.pond)}`;
-    const ambient = document.createElement('span');
-    ambient.textContent = `Ambiente: ${formatTemperature(sample.ambient)}`;
-    tooltip.append(time, pond, ambient);
+    const water = document.createElement('span');
+    water.textContent = `Acqua: ${formatTemperature(sample.pond)}`;
+    const terrain = document.createElement('span');
+    terrain.textContent = `Terreno: ${formatTemperature(sample.ambient)}`;
+    const outdoorTemperature = model.outdoorSamples.find((candidate) => candidate.minute === sample.minute)?.temperature;
+    const outdoor = document.createElement('span');
+    outdoor.textContent = `Ambiente: ${formatTemperature(outdoorTemperature)}`;
+    tooltip.append(time, water, terrain, outdoor);
     tooltip.style.left = `${Math.max(12, Math.min(88, x / WIDTH * 100))}%`;
     tooltip.classList.add('is-visible');
   };
@@ -223,10 +242,10 @@ export function renderTemperatureChart(container, history, snapshot) {
   });
   const legend = document.createElement('div');
   legend.className = 'temperature-chart-legend';
-  legend.innerHTML = '<span class="legend-pond"><i></i>Pond</span><span class="legend-ambient"><i></i>Ambiente</span>';
+  legend.innerHTML = '<span class="legend-pond"><i></i>Acqua</span><span class="legend-ambient"><i></i>Terreno</span><span class="legend-outdoor"><i></i>Ambiente</span>';
   chartWrap.append(legend, svg, tooltip);
 
-  if (!model.samples.length) {
+  if (!model.samples.length && !model.outdoorSamples.length) {
     const empty = document.createElement('p');
     empty.className = 'chart-empty';
     empty.textContent = 'Nessun campione disponibile per oggi';

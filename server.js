@@ -21,6 +21,7 @@ import { createPumpController, PumpControlError } from './src/pump-control.js';
 import { createSafetyMonitor } from './src/safety-monitor.js';
 import { TpapClient } from './src/tpap/client.js';
 import { WeatherService } from './src/weather-service.js';
+import { OutdoorTemperatureService } from './src/outdoor-temperature-service.js';
 import { RoleRuntimeManager } from './src/role-runtime-manager.js';
 import {
   isRuntimeEligible, isRuntimeEligiblePlug, requireSupportedDeviceModel, requireSupportedPlugModel, runtimeConfiguration,
@@ -75,6 +76,7 @@ const STATIC_FILES = new Map([
   ['/icons/umidity.svg', ['icons/umidity.svg', 'image/svg+xml']],
   ['/icons/update.svg', ['icons/update.svg', 'image/svg+xml']],
   ['/icons/weather.svg', ['icons/weather.svg', 'image/svg+xml']],
+  ['/icons/webcam.svg', ['icons/webcam.svg', 'image/svg+xml']],
   ['/icons/wind.svg', ['icons/wind.svg', 'image/svg+xml']],
   ['/icons/wifi.svg', ['icons/wifi.svg', 'image/svg+xml']],
 ]);
@@ -215,6 +217,9 @@ export function createPondServer({
   controlHeaterState,
   controlPumpState,
   weatherService = new WeatherService({ config: WEATHER_CONFIG, log: info, logError: error }),
+  outdoorTemperatureService = new OutdoorTemperatureService({
+    latitude: process.env.POND_LATITUDE, longitude: process.env.POND_LONGITUDE, logError: error,
+  }),
   dewinService = UNAVAILABLE_DEWIN_SERVICE,
   cameraManager = UNAVAILABLE_CAMERA_MANAGER,
   sensorRuntimeManager = null,
@@ -348,6 +353,15 @@ export function createPondServer({
           return;
         }
         sendJson(response, 200, weatherService.snapshot());
+        return;
+      }
+      if (url.pathname === '/api/weather/hourly') {
+        if (request.method !== 'GET') {
+          response.writeHead(405, { Allow: 'GET' });
+          response.end();
+          return;
+        }
+        sendJson(response, 200, await outdoorTemperatureService.today());
         return;
       }
       if (url.pathname === '/api/dewin') {

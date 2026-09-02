@@ -16,7 +16,7 @@ test('temperature chart has mandatory fixed daily and Celsius ranges', () => {
   });
 });
 
-test('chart keeps both real series, exact sample count and correct daily min/max', () => {
+test('chart keeps Acqua, Terreno and server-provided Ambiente series without inventing samples', () => {
   const history = {
     date: '2026-08-27',
     samples: [
@@ -27,12 +27,13 @@ test('chart keeps both real series, exact sample count and correct daily min/max
   };
   const model = buildTemperatureChartModel(history, {
     externalProbeTemperature: { value: 27.2 }, ambientTemperature: { value: 28.9 },
-  });
+  }, { available: true, stale: false, samples: [{ timestamp: '2026-08-27T06:00', minute: 360, temperature: 18.1 }, { timestamp: '2026-08-27T12:00', minute: 720, temperature: 25.3 }] });
   assert.equal(model.samples.length, history.samples.length);
   assert.deepEqual(model.samples.map(({ pond, ambient }) => ({ pond, ambient })), history.samples.map(({ pond, ambient }) => ({ pond, ambient })));
   assert.deepEqual(model.pond, { min: 24.7, max: 28.5 });
-  assert.deepEqual(model.ambient, { min: 27.8, max: 29.4 });
-  assert.deepEqual(model.current, { pond: 27.2, ambient: 28.9 });
+  assert.deepEqual(model.terrain, { min: 27.8, max: 29.4 });
+  assert.deepEqual(model.outdoor, { min: 18.1, max: 25.3 });
+  assert.deepEqual(model.current, { pond: 27.2, terrain: 28.9, outdoor: 25.3 });
 });
 
 test('significant acquisition gaps break the SVG path instead of interpolating them', () => {
@@ -62,11 +63,12 @@ test('responsive insights layout aligns two desktop columns and stacks on mobile
   assert.match(css, /@media \(max-width: 700px\)[\s\S]*?\.insights-grid\s*\{\s*grid-template-columns:\s*1fr/);
   assert.match(chartSource, /chart-line-pond/);
   assert.match(chartSource, /chart-line-ambient/);
+  assert.match(chartSource, /chart-line-outdoor/);
   assert.match(chartSource, /chart-glow-pond/);
   assert.doesNotMatch(chartSource, /chart-glow-ambient/);
   assert.match(chartSource, /feGaussianBlur/);
   assert.match(chartSource, /Temperature Oggi/);
-  assert.match(chartSource, /Sonda DEWIN/);
+  assert.match(chartSource, /sensorSubtitle/);
   assert.match(chartSource, /\/icons\/history\.svg/);
   assert.match(chartSource, /temperature-day-night/);
   assert.match(chartSource, /temperature-chart-legend/);
@@ -74,6 +76,7 @@ test('responsive insights layout aligns two desktop columns and stacks on mobile
   assert.match(css, /\.chart-glow\s*\{[^}]*stroke-width:\s*8/);
   assert.match(css, /filter:\s*url\(#pond-neon-blur\)/);
   assert.match(css, /\.chart-line-ambient\s*\{[^}]*stroke:\s*#ff9b3f/);
+  assert.match(css, /\.chart-line-outdoor\s*\{[^}]*stroke:\s*#b893ff/);
   assert.match(chartSource, /pointermove/);
   assert.match(chartSource, /pointerdown/);
 });

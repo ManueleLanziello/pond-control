@@ -415,6 +415,7 @@ test('all Pond Control SVG icons are served with the SVG content type', async ()
       'snow.svg',
       'storm.svg',
       'sun.svg',
+      'webcam.svg',
     ]) {
       const response = await fetch(`${baseUrl}/icons/${icon}`);
       assert.equal(response.status, 200, icon);
@@ -437,6 +438,18 @@ test('GET /api/weather returns only the cached weather snapshot', async () => {
     assert.deepEqual(await response.json(), weather);
   }, { weatherService: { snapshot: () => { snapshotReads += 1; return weather; } } });
   assert.equal(snapshotReads, 1);
+});
+
+test('GET /api/weather/hourly returns the server-side cached outdoor temperature series only', async () => {
+  let reads = 0;
+  const outdoor = { available: true, stale: false, updatedAt: '2026-09-02T10:00:00.000Z', samples: [{ timestamp: '2026-09-02T12:00', minute: 720, temperature: 24.1 }] };
+  await withServer(async (device) => fixture(device), async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/weather/hourly`);
+    assert.equal(response.status, 200); assert.deepEqual(await response.json(), outdoor);
+    const rejected = await fetch(`${baseUrl}/api/weather/hourly`, { method: 'POST' });
+    assert.equal(rejected.status, 405); assert.equal(rejected.headers.get('allow'), 'GET');
+  }, { outdoorTemperatureService: { today: async () => { reads += 1; return outdoor; } } });
+  assert.equal(reads, 1);
 });
 
 test('GET /api/dewin returns only the cached read-only Dewin snapshot', async () => {

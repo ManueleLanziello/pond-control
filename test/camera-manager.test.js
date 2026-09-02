@@ -151,6 +151,6 @@ test('camera worker and UI remain on-demand and enforce the safety timeout', asy
   assert.match(ui, /JSON\.stringify\(\{ active: !live \}\)/);
   assert.match(ui, /camera\.errorCode/);
   assert.match(ui, /pagehide[\s\S]*?active: false/);
-  assert.match(html, /id="camera-card"[\s\S]*?Telecamera Pond[\s\S]*?LIVESTREAM/);
+  assert.match(html, /id="camera-card"[\s\S]*?webcam\.svg[\s\S]*?Telecamera[\s\S]*?LIVESTREAM/);
   assert.match(css, /\.camera-media\s*\{[^}]*aspect-ratio:\s*16 \/ 9/);
 });

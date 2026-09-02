@@ -15,6 +15,7 @@ let latestDevices = [];
 let latestWeather = null;
 let latestDewin = null;
 let latestDewinHistory = null;
+let latestOutdoorTemperatures = null;
 let latestHardware = null;
 let heaterCommandPending = false;
 let heaterCommandMessage = '';
@@ -361,6 +362,9 @@ async function refresh() {
     const dewinHistoryRequest = fetch('/api/dewin/history', { cache: 'no-store' })
       .then(async (response) => (response.ok ? response.json() : null))
       .catch(() => null);
+    const outdoorTemperaturesRequest = fetch('/api/weather/hourly', { cache: 'no-store' })
+      .then(async (response) => (response.ok ? response.json() : null))
+      .catch(() => null);
     const hardwareRequest = fetch('/api/hardware', { cache: 'no-store' })
       .then(async (hardwareResponse) => (hardwareResponse.ok ? hardwareResponse.json() : null))
       .catch(() => null);
@@ -375,9 +379,14 @@ async function refresh() {
     if (dewin) latestDewin = dewin;
     const dewinHistory = await dewinHistoryRequest;
     if (dewinHistory) latestDewinHistory = dewinHistory;
+    const outdoorTemperatures = await outdoorTemperaturesRequest;
+    if (outdoorTemperatures) latestOutdoorTemperatures = outdoorTemperatures;
     const hardware = await hardwareRequest;
     if (hardware) latestHardware = hardware;
-    renderTemperatureChart(temperatureChartElement, latestDewinHistory, latestDewin);
+    renderTemperatureChart(
+      temperatureChartElement, latestDewinHistory, latestDewin, latestOutdoorTemperatures,
+      sensorDashboardLabel('pond_temperature', latestHardware, latestDewin?.name || ''),
+    );
     renderDevices(latestDevices);
     const functions = buildDashboardFunctions(payload.devices);
     const unassigned = functions.filter((item) => !item.device).length;
