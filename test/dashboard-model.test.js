@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import {
-  buildDashboardFunctions, dashboardDevicesFromPayload, dashboardRefreshHealth, plugDashboardLabel, POND_FUNCTIONS, sensorDashboardLabel,
+  buildDashboardFunctions, dashboardDevicesFromPayload, dashboardRefreshHealth, dashboardSnapshotPayload, readDashboardSnapshot, writeDashboardSnapshot, plugDashboardLabel, POND_FUNCTIONS, sensorDashboardLabel,
 } from '../public/dashboard-model.js';
 
 const p105 = {
@@ -39,6 +39,16 @@ test('global dashboard health degrades only after three consecutive main refresh
   health = dashboardRefreshHealth(health.failures, false);
   assert.deepEqual(health, { failures: 3, degraded: true });
   assert.deepEqual(dashboardRefreshHealth(health.failures, true), { failures: 0, degraded: false });
+});
+
+test('dashboard snapshot restores card data across navigation and stores only display-safe device fields', () => {
+  const values = new Map();
+  const storage = { getItem: (key) => values.get(key) || null, setItem: (key, value) => values.set(key, value) };
+  const payload = { devices: [{ id: 'p1', name: 'Pompa', model: 'P105', state: 'ON', online: true, role: 'pump', ip: '192.168.1.5', protocol: 'tpap', password: 'never-store' }] };
+  writeDashboardSnapshot(storage, payload);
+  assert.deepEqual(readDashboardSnapshot(storage), { devices: [{ id: 'p1', name: 'Pompa', model: 'P105', state: 'ON', online: true, role: 'pump' }] });
+  assert.doesNotMatch(values.get('pond-control.dashboard-devices.v1'), /192\.168|tpap|password|never-store/);
+  assert.deepEqual(dashboardSnapshotPayload({ devices: [p105] }).devices, [{ id: p105.id, name: p105.name, model: p105.model, role: p105.role }]);
 });
 
 test('pump and heater functions use the devices assigned by role', () => {
@@ -116,8 +126,9 @@ test('dashboard polling remains five seconds and role is the only assignment key
     readFile(new URL('../public/app.js', import.meta.url), 'utf8'),
     readFile(new URL('../public/dashboard-model.js', import.meta.url), 'utf8'),
   ]);
-  assert.match(appSource, /setInterval\(refresh, 5000\)/);
-  assert.match(appSource, /if \(refreshInProgress\) return;/);
+  assert.match(appSource, /DASHBOARD_RETRY_DELAYS_MS = \[1000, 2000, 5000\]/);
+  assert.match(appSource, /scheduleRefresh\(succeeded \? DASHBOARD_REFRESH_INTERVAL_MS : retryDelay\)/);
+  assert.match(appSource, /if \(refreshInProgress\) return false;/);
   assert.match(appSource, /finally \{\s*refreshInProgress = false;/);
   assert.match(modelSource, /device\.role === pondFunction\.role/);
   assert.doesNotMatch(modelSource, /device\.(?:id|name|model|ip)\s*===/);
@@ -136,6 +147,8 @@ test('dashboard renders the five compact cards in the required order', async () 
   assert.match(appSource, /fetch\('\/api\/weather\/hourly'[\s\S]*?\.catch\(\(\) => null\)/);
   assert.match(appSource, /fetch\('\/api\/weather', \{ cache: 'no-store' \}\)[\s\S]*?\.catch\(\(\) => null\)/);
   assert.match(appSource, /initCameraCard\(cameraCardElement\);/);
+  assert.match(appSource, /readDashboardSnapshot\(sessionStorage\)/);
+  assert.match(appSource, /renderDevices\(latestDevices\);\s*scheduleRefresh\(0\);/);
   const refreshSource = appSource.slice(appSource.indexOf('async function refresh'), appSource.indexOf('refresh();'));
   assert.ok(refreshSource.indexOf('renderDevices(latestDevices)') < refreshSource.indexOf('renderTemperatureChart('));
   assert.match(refreshSource, /renderDevices\(latestDevices\);\s*try \{\s*renderTemperatureChart/);

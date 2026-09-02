@@ -31,5 +31,5 @@ test('pump UI calls only the role endpoint', async () => {
 test('dashboard keeps five-second polling and does not update pump before response', async () => {
   const source = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
   assert.match(source, /pumpCommandPending = true;[\s\S]*renderDevices\(latestDevices\)[\s\S]*await requestPumpState/);
-  assert.match(source, /setInterval\(refresh, 5000\)/);
+  assert.match(source, /DASHBOARD_REFRESH_INTERVAL_MS = 5000/);
 });

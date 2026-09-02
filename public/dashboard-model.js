@@ -3,6 +3,8 @@ export const POND_FUNCTIONS = Object.freeze([
   Object.freeze({ role: 'heater', title: 'Riscaldatore Pond' }),
 ]);
 export const DASHBOARD_REFRESH_FAILURE_THRESHOLD = 3;
+export const DASHBOARD_SNAPSHOT_STORAGE_KEY = 'pond-control.dashboard-devices.v1';
+const DASHBOARD_DEVICE_FIELDS = Object.freeze(['id', 'name', 'model', 'type', 'state', 'online', 'communicationDegraded', 'consecutiveFailures', 'lastReadAt', 'role', 'runtimeActive']);
 
 export function dashboardRefreshHealth(previousFailures, refreshSucceeded) {
   const failures = refreshSucceeded ? 0 : previousFailures + 1;
@@ -19,6 +21,21 @@ export function buildDashboardFunctions(devices) {
 export function dashboardDevicesFromPayload(previousDevices, payload) {
   if (!Array.isArray(payload?.devices)) throw new Error('Risposta API non valida');
   return payload.devices;
+}
+
+export function dashboardSnapshotPayload(payload) {
+  const devices = dashboardDevicesFromPayload([], payload).map((device) => Object.fromEntries(
+    DASHBOARD_DEVICE_FIELDS.filter((field) => Object.hasOwn(device, field)).map((field) => [field, device[field]]),
+  ));
+  return { devices };
+}
+
+export function readDashboardSnapshot(storage) {
+  try { return dashboardSnapshotPayload(JSON.parse(storage.getItem(DASHBOARD_SNAPSHOT_STORAGE_KEY) || 'null')); } catch { return null; }
+}
+
+export function writeDashboardSnapshot(storage, payload) {
+  storage.setItem(DASHBOARD_SNAPSHOT_STORAGE_KEY, JSON.stringify(dashboardSnapshotPayload(payload)));
 }
 
 function identityLabel(alias, model) {

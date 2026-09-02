@@ -1,4 +1,4 @@
-import { buildDashboardFunctions, dashboardDevicesFromPayload, dashboardRefreshHealth, plugDashboardLabel, sensorDashboardLabel } from './dashboard-model.js';
+import { buildDashboardFunctions, dashboardDevicesFromPayload, dashboardRefreshHealth, plugDashboardLabel, readDashboardSnapshot, sensorDashboardLabel, writeDashboardSnapshot } from './dashboard-model.js';
 import { initCameraCard } from './camera-view.js';
 import { dewinCardView, formatDewinValue } from './dewin-view.js';
 import { heaterControlView, requestHeaterState } from './heater-control.js';
@@ -23,6 +23,9 @@ let pumpCommandPending = false;
 let pumpCommandMessage = '';
 let mainRefreshFailures = 0;
 let refreshInProgress = false;
+let retryAttempt = 0;
+const DASHBOARD_REFRESH_INTERVAL_MS = 5000;
+const DASHBOARD_RETRY_DELAYS_MS = [1000, 2000, 5000];
 
 function iconImage(source, className) {
   const image = document.createElement('img');
@@ -354,7 +357,7 @@ async function commandPump(device, requestedState) {
 }
 
 async function refresh() {
-  if (refreshInProgress) return;
+  if (refreshInProgress) return false;
   refreshInProgress = true;
   try {
     const weatherRequest = fetch('/api/weather', { cache: 'no-store' })
@@ -376,6 +379,7 @@ async function refresh() {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const payload = await response.json();
     latestDevices = dashboardDevicesFromPayload(latestDevices, payload);
+    writeDashboardSnapshot(sessionStorage, payload);
     const weather = await weatherRequest;
     if (weather) latestWeather = weather;
     const dewin = await dewinRequest;
@@ -396,9 +400,11 @@ async function refresh() {
       console.warn('Grafico temperature non aggiornato; restano visibili gli ultimi dati validi.');
     }
     mainRefreshFailures = dashboardRefreshHealth(mainRefreshFailures, true).failures;
+    retryAttempt = 0;
     statusElement.textContent = 'Tutte le funzioni sono online';
     statusElement.className = 'status-message is-ok';
     updateElement.textContent = `Ultimo aggiornamento: ${new Date().toLocaleTimeString('it-IT')}`;
+    return true;
   } catch {
     const health = dashboardRefreshHealth(mainRefreshFailures, false);
     mainRefreshFailures = health.failures;
@@ -406,11 +412,25 @@ async function refresh() {
       statusElement.textContent = 'Aggiornamento temporaneamente non disponibile. I dati precedenti restano visibili.';
       statusElement.className = 'status-message has-error';
     }
+    retryAttempt += 1;
+    return false;
   } finally {
     refreshInProgress = false;
   }
 }
 
-refresh();
-setInterval(refresh, 5000);
+function scheduleRefresh(delay) {
+  setTimeout(async () => {
+    const succeeded = await refresh();
+    const retryDelay = DASHBOARD_RETRY_DELAYS_MS[Math.min(Math.max(retryAttempt - 1, 0), DASHBOARD_RETRY_DELAYS_MS.length - 1)];
+    scheduleRefresh(succeeded ? DASHBOARD_REFRESH_INTERVAL_MS : retryDelay);
+  }, delay);
+}
+
+const cachedSnapshot = readDashboardSnapshot(sessionStorage);
+if (cachedSnapshot) {
+  latestDevices = cachedSnapshot.devices.map((device) => ({ ...device, cached: true }));
+}
+renderDevices(latestDevices);
+scheduleRefresh(0);
 initCameraCard(cameraCardElement);
