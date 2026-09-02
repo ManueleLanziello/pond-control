@@ -13,6 +13,7 @@ const WIDTH = 900;
 const HEIGHT = 430;
 const PLOT = Object.freeze({ left: 54, right: 18, top: 18, bottom: 43 });
 const SERIES_GAP_MS = 20 * 60_000;
+const HOURLY_SERIES_GAP_MS = 90 * 60_000;
 
 function timeParts(timestamp) {
   const parts = new Intl.DateTimeFormat('en-GB', {
@@ -78,18 +79,18 @@ function yPosition(value) {
     / (TEMPERATURE_CHART_RANGE.yMax - TEMPERATURE_CHART_RANGE.yMin)) * plotHeight;
 }
 
-export function buildTemperatureSeriesPath(samples, field) {
+export function buildTemperatureSeriesPath(samples, field, maximumGapMs = SERIES_GAP_MS) {
   return samples.map((sample, index) => {
     const previous = samples[index - 1];
     const gap = previous ? Date.parse(sample.timestamp) - Date.parse(previous.timestamp) : 0;
     const x = xPosition(sample.minute); const y = yPosition(sample[field]);
-    if (!previous || gap > SERIES_GAP_MS) return `M ${x.toFixed(2)} ${y.toFixed(2)}`;
+    if (!previous || gap > maximumGapMs) return `M ${x.toFixed(2)} ${y.toFixed(2)}`;
     const beforePrevious = samples[index - 2];
     const previousGap = beforePrevious ? Date.parse(previous.timestamp) - Date.parse(beforePrevious.timestamp) : 0;
-    const controlBefore = !beforePrevious || previousGap > SERIES_GAP_MS ? previous : beforePrevious;
+    const controlBefore = !beforePrevious || previousGap > maximumGapMs ? previous : beforePrevious;
     const next = samples[index + 1];
     const nextGap = next ? Date.parse(next.timestamp) - Date.parse(sample.timestamp) : 0;
-    const controlAfter = !next || nextGap > SERIES_GAP_MS ? sample : next;
+    const controlAfter = !next || nextGap > maximumGapMs ? sample : next;
     const previousX = xPosition(previous.minute); const previousY = yPosition(previous[field]);
     const beforePreviousX = xPosition(controlBefore.minute); const beforePreviousY = yPosition(controlBefore[field]);
     const nextX = xPosition(controlAfter.minute); const nextY = yPosition(controlAfter[field]);
@@ -198,7 +199,7 @@ export function renderTemperatureChart(container, history, snapshot, outdoor, se
     );
   }
   if (model.outdoorSamples.length) {
-    plot.append(svgElement('path', { class: 'chart-line chart-line-outdoor', d: buildTemperatureSeriesPath(model.outdoorSamples, 'temperature') }));
+    plot.append(svgElement('path', { class: 'chart-line chart-line-outdoor', d: buildTemperatureSeriesPath(model.outdoorSamples, 'temperature', HOURLY_SERIES_GAP_MS) }));
   }
   const marker = svgElement('line', {
     class: 'chart-hover-marker', x1: PLOT.left, y1: PLOT.top,

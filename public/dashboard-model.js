@@ -10,6 +10,11 @@ export function buildDashboardFunctions(devices) {
   }));
 }
 
+export function dashboardDevicesFromPayload(previousDevices, payload) {
+  if (!Array.isArray(payload?.devices)) throw new Error('Risposta API non valida');
+  return payload.devices;
+}
+
 function identityLabel(alias, model) {
   const normalizedAlias = String(alias || '').trim();
   const normalizedModel = String(model || '').trim();

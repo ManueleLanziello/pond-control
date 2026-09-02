@@ -1,4 +1,4 @@
-import { buildDashboardFunctions, plugDashboardLabel, sensorDashboardLabel } from './dashboard-model.js';
+import { buildDashboardFunctions, dashboardDevicesFromPayload, plugDashboardLabel, sensorDashboardLabel } from './dashboard-model.js';
 import { initCameraCard } from './camera-view.js';
 import { dewinCardView, formatDewinValue } from './dewin-view.js';
 import { heaterControlView, requestHeaterState } from './heater-control.js';
@@ -371,8 +371,7 @@ async function refresh() {
     const response = await fetch('/api/devices', { cache: 'no-store' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const payload = await response.json();
-    if (!Array.isArray(payload.devices)) throw new Error('Risposta API non valida');
-    latestDevices = payload.devices;
+    latestDevices = dashboardDevicesFromPayload(latestDevices, payload);
     const weather = await weatherRequest;
     if (weather) latestWeather = weather;
     const dewin = await dewinRequest;
@@ -383,11 +382,15 @@ async function refresh() {
     if (outdoorTemperatures) latestOutdoorTemperatures = outdoorTemperatures;
     const hardware = await hardwareRequest;
     if (hardware) latestHardware = hardware;
-    renderTemperatureChart(
-      temperatureChartElement, latestDewinHistory, latestDewin, latestOutdoorTemperatures,
-      sensorDashboardLabel('pond_temperature', latestHardware, latestDewin?.name || ''),
-    );
     renderDevices(latestDevices);
+    try {
+      renderTemperatureChart(
+        temperatureChartElement, latestDewinHistory, latestDewin, latestOutdoorTemperatures,
+        sensorDashboardLabel('pond_temperature', latestHardware, latestDewin?.name || ''),
+      );
+    } catch {
+      console.warn('Grafico temperature non aggiornato; restano visibili gli ultimi dati validi.');
+    }
     const functions = buildDashboardFunctions(payload.devices);
     const unassigned = functions.filter((item) => !item.device).length;
     const offline = functions.filter((item) => item.device && !item.device.online).length;

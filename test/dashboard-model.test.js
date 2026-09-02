@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import {
-  buildDashboardFunctions, plugDashboardLabel, POND_FUNCTIONS, sensorDashboardLabel,
+  buildDashboardFunctions, dashboardDevicesFromPayload, plugDashboardLabel, POND_FUNCTIONS, sensorDashboardLabel,
 } from '../public/dashboard-model.js';
 
 const p105 = {
@@ -17,6 +17,16 @@ test('dashboard always exposes the two fixed Pond functions', () => {
     { role: 'pump', title: 'Pompa Filtro Pond' },
     { role: 'heater', title: 'Riscaldatore Pond' },
   ]);
+});
+
+test('failed refresh preserves rendered cards and a later valid refresh resumes updates', () => {
+  const first = [{ id: 'first' }]; const second = [{ id: 'second' }];
+  let rendered = dashboardDevicesFromPayload([], { devices: first });
+  assert.equal(rendered, first);
+  assert.throws(() => dashboardDevicesFromPayload(rendered, { error: 'temporaneo' }), /Risposta API non valida/);
+  assert.equal(rendered, first);
+  rendered = dashboardDevicesFromPayload(rendered, { devices: second });
+  assert.equal(rendered, second);
 });
 
 test('pump and heater functions use the devices assigned by role', () => {
@@ -109,6 +119,11 @@ test('dashboard renders the five compact cards in the required order', async () 
     appSource.indexOf('function functionCard'),
   );
   assert.match(appSource, /fetch\('\/api\/weather'/);
+  assert.match(appSource, /fetch\('\/api\/weather\/hourly'[\s\S]*?\.catch\(\(\) => null\)/);
+  const refreshSource = appSource.slice(appSource.indexOf('async function refresh'), appSource.indexOf('refresh();'));
+  assert.ok(refreshSource.indexOf('renderDevices(latestDevices)') < refreshSource.indexOf('renderTemperatureChart('));
+  assert.match(refreshSource, /renderDevices\(latestDevices\);\s*try \{\s*renderTemperatureChart/);
+  assert.doesNotMatch(refreshSource.slice(refreshSource.lastIndexOf('} catch {')), /renderDevices|replaceChildren/);
   assert.match(appSource, /weatherCard\(latestWeather\),\s*pondTemperatureCard\(latestDewin\),\s*\.\.\.functions\.map[\s\S]*?thermostatCard\(\)/);
   assert.match(appSource, /weatherIconForCode\(weather\?\.weatherCode, \{ key: 'weather', src: '\/icons\/weather\.svg' \}\)/);
   assert.match(appSource, /iconImage\(currentIcon\.src, 'function-icon'\)/);

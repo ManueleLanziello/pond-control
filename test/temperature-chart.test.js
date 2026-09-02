@@ -47,6 +47,18 @@ test('visual smoothing uses cubic curves without bridging significant acquisitio
   assert.equal((path.match(/\bC\b/g) || []).length, 1);
 });
 
+test('hourly Europe/Rome Open-Meteo samples form a visible Ambiente curve at their real hours', () => {
+  const samples = [
+    { timestamp: '2026-09-02T10:00', minute: 600, temperature: 21.4 },
+    { timestamp: '2026-09-02T11:00', minute: 660, temperature: 22.1 },
+    { timestamp: '2026-09-02T12:00', minute: 720, temperature: 23.0 },
+  ];
+  const path = buildTemperatureSeriesPath(samples, 'temperature', 90 * 60_000);
+  assert.equal((path.match(/\bM\b/g) || []).length, 1);
+  assert.equal((path.match(/\bC\b/g) || []).length, 2);
+  assert.match(path, /C/);
+});
+
 test('chart source uses no visible data markers and summary ranges omit Min/Max labels', async () => {
   const chart = await readFile(new URL('../public/temperature-chart.js', import.meta.url), 'utf8');
   assert.doesNotMatch(chart, /chart-point|svgElement\('circle'/);
