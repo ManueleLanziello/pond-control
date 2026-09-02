@@ -1,4 +1,4 @@
-import { buildDashboardFunctions, dashboardDevicesFromPayload, plugDashboardLabel, sensorDashboardLabel } from './dashboard-model.js';
+import { buildDashboardFunctions, dashboardDevicesFromPayload, dashboardRefreshHealth, plugDashboardLabel, sensorDashboardLabel } from './dashboard-model.js';
 import { initCameraCard } from './camera-view.js';
 import { dewinCardView, formatDewinValue } from './dewin-view.js';
 import { heaterControlView, requestHeaterState } from './heater-control.js';
@@ -21,6 +21,8 @@ let heaterCommandPending = false;
 let heaterCommandMessage = '';
 let pumpCommandPending = false;
 let pumpCommandMessage = '';
+let mainRefreshFailures = 0;
+let refreshInProgress = false;
 
 function iconImage(source, className) {
   const image = document.createElement('img');
@@ -352,6 +354,8 @@ async function commandPump(device, requestedState) {
 }
 
 async function refresh() {
+  if (refreshInProgress) return;
+  refreshInProgress = true;
   try {
     const weatherRequest = fetch('/api/weather', { cache: 'no-store' })
       .then(async (response) => (response.ok ? response.json() : null))
@@ -391,19 +395,19 @@ async function refresh() {
     } catch {
       console.warn('Grafico temperature non aggiornato; restano visibili gli ultimi dati validi.');
     }
-    const functions = buildDashboardFunctions(payload.devices);
-    const unassigned = functions.filter((item) => !item.device).length;
-    const offline = functions.filter((item) => item.device && !item.device.online).length;
-    statusElement.textContent = unassigned
-      ? `${unassigned} funzion${unassigned === 1 ? 'e' : 'i'} senza presa assegnata`
-      : offline
-        ? `${offline} funzion${offline === 1 ? 'e' : 'i'} offline`
-        : 'Tutte le funzioni sono online';
-    statusElement.className = `status-message ${unassigned || offline ? 'has-error' : 'is-ok'}`;
+    mainRefreshFailures = dashboardRefreshHealth(mainRefreshFailures, true).failures;
+    statusElement.textContent = 'Tutte le funzioni sono online';
+    statusElement.className = 'status-message is-ok';
     updateElement.textContent = `Ultimo aggiornamento: ${new Date().toLocaleTimeString('it-IT')}`;
   } catch {
-    statusElement.textContent = 'Aggiornamento non riuscito. I dati precedenti restano visibili.';
-    statusElement.className = 'status-message has-error';
+    const health = dashboardRefreshHealth(mainRefreshFailures, false);
+    mainRefreshFailures = health.failures;
+    if (health.degraded) {
+      statusElement.textContent = 'Aggiornamento temporaneamente non disponibile. I dati precedenti restano visibili.';
+      statusElement.className = 'status-message has-error';
+    }
+  } finally {
+    refreshInProgress = false;
   }
 }
 

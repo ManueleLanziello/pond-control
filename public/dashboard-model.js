@@ -2,6 +2,12 @@ export const POND_FUNCTIONS = Object.freeze([
   Object.freeze({ role: 'pump', title: 'Pompa Filtro Pond' }),
   Object.freeze({ role: 'heater', title: 'Riscaldatore Pond' }),
 ]);
+export const DASHBOARD_REFRESH_FAILURE_THRESHOLD = 3;
+
+export function dashboardRefreshHealth(previousFailures, refreshSucceeded) {
+  const failures = refreshSucceeded ? 0 : previousFailures + 1;
+  return { failures, degraded: failures >= DASHBOARD_REFRESH_FAILURE_THRESHOLD };
+}
 
 export function buildDashboardFunctions(devices) {
   return POND_FUNCTIONS.map((pondFunction) => ({

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import {
-  buildDashboardFunctions, dashboardDevicesFromPayload, plugDashboardLabel, POND_FUNCTIONS, sensorDashboardLabel,
+  buildDashboardFunctions, dashboardDevicesFromPayload, dashboardRefreshHealth, plugDashboardLabel, POND_FUNCTIONS, sensorDashboardLabel,
 } from '../public/dashboard-model.js';
 
 const p105 = {
@@ -27,6 +27,18 @@ test('failed refresh preserves rendered cards and a later valid refresh resumes 
   assert.equal(rendered, first);
   rendered = dashboardDevicesFromPayload(rendered, { devices: second });
   assert.equal(rendered, second);
+});
+
+test('global dashboard health degrades only after three consecutive main refresh failures and resets on success', () => {
+  let health = dashboardRefreshHealth(0, true);
+  assert.deepEqual(health, { failures: 0, degraded: false });
+  health = dashboardRefreshHealth(health.failures, false);
+  assert.deepEqual(health, { failures: 1, degraded: false });
+  health = dashboardRefreshHealth(health.failures, false);
+  assert.deepEqual(health, { failures: 2, degraded: false });
+  health = dashboardRefreshHealth(health.failures, false);
+  assert.deepEqual(health, { failures: 3, degraded: true });
+  assert.deepEqual(dashboardRefreshHealth(health.failures, true), { failures: 0, degraded: false });
 });
 
 test('pump and heater functions use the devices assigned by role', () => {
@@ -105,6 +117,8 @@ test('dashboard polling remains five seconds and role is the only assignment key
     readFile(new URL('../public/dashboard-model.js', import.meta.url), 'utf8'),
   ]);
   assert.match(appSource, /setInterval\(refresh, 5000\)/);
+  assert.match(appSource, /if \(refreshInProgress\) return;/);
+  assert.match(appSource, /finally \{\s*refreshInProgress = false;/);
   assert.match(modelSource, /device\.role === pondFunction\.role/);
   assert.doesNotMatch(modelSource, /device\.(?:id|name|model|ip)\s*===/);
 });
@@ -120,6 +134,8 @@ test('dashboard renders the five compact cards in the required order', async () 
   );
   assert.match(appSource, /fetch\('\/api\/weather'/);
   assert.match(appSource, /fetch\('\/api\/weather\/hourly'[\s\S]*?\.catch\(\(\) => null\)/);
+  assert.match(appSource, /fetch\('\/api\/weather', \{ cache: 'no-store' \}\)[\s\S]*?\.catch\(\(\) => null\)/);
+  assert.match(appSource, /initCameraCard\(cameraCardElement\);/);
   const refreshSource = appSource.slice(appSource.indexOf('async function refresh'), appSource.indexOf('refresh();'));
   assert.ok(refreshSource.indexOf('renderDevices(latestDevices)') < refreshSource.indexOf('renderTemperatureChart('));
   assert.match(refreshSource, /renderDevices\(latestDevices\);\s*try \{\s*renderTemperatureChart/);
