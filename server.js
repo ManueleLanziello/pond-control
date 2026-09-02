@@ -623,6 +623,7 @@ if (isMain) {
     const allHardware = [...startupRegistry.plugs, ...startupRegistry.sensors, ...startupRegistry.cameras];
     const roleStore = new DeviceRoleStore({ filePath: DEFAULT_ROLE_FILE, deviceList: allHardware });
     await roleStore.reconcileDevices(allHardware, hardwareStore.legacyRoleAssignments);
+    await hardwareStore.completePendingMigration(startupRegistry);
     const deviceManager = new DeviceManager({
       deviceList: startupRegistry.plugs.filter(isRuntimeEligiblePlug).map(runtimePlugConfiguration),
       createClient: createConfiguredClient,

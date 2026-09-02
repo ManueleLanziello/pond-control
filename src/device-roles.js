@@ -66,9 +66,6 @@ export class DeviceRoleStore {
 
   async reconcileDevices(deviceList, legacyAssignments = {}) {
     const nextIds = deviceList.map((device) => device.id);
-    if (nextIds.length === this.deviceIds.length && nextIds.every((id, index) => id === this.deviceIds[index])) {
-      return this.read();
-    }
     const previousIds = this.deviceIds;
     const previousDefaults = this.defaults;
     const previousAllowed = this.allowedById;
@@ -78,8 +75,16 @@ export class DeviceRoleStore {
       Object.fromEntries(nextIds.map((id) => [id, previousDefaults[id] || legacyAssignments[id] || deviceList.find((device) => device.id === id)?.role || 'none'])), nextIds, this.allowedById,
     );
     try {
-      const assignments = await this.read();
-      for (const id of nextIds) if (!previousIds.includes(id) && assignments[id] === 'none' && this.defaults[id] !== 'none') assignments[id] = this.defaults[id];
+      let persisted = {};
+      try {
+        const parsed = JSON.parse(await readFile(this.filePath, 'utf8'));
+        if (parsed.assignments && typeof parsed.assignments === 'object' && !Array.isArray(parsed.assignments)) persisted = parsed.assignments;
+      } catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+      }
+      const assignments = Object.fromEntries(nextIds.map((id) => [
+        id, Object.hasOwn(persisted, id) ? persisted[id] : legacyAssignments[id] || this.defaults[id] || 'none',
+      ]));
       await this.write(assignments);
       return assignments;
     } catch (error) {

@@ -9,6 +9,22 @@ export const SENSOR_ROLES = Object.freeze(['none', 'pond_temperature']);
 export const CAMERA_ROLES = Object.freeze(['none', 'pond_camera']);
 const HARDWARE_REGISTRY_VERSION = 4;
 const MAC_PATTERN = /^(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}$/i;
+const DEWIN_SUPPORTED_MODEL = 'T & H Sensor with external probe';
+
+function normalizedIntegrationName(value) {
+  return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+function isLegacyDewinRecord(sensor) {
+  if (String(sensor?.model || '').trim()) return false;
+  const cloudConnection = normalizedIntegrationName(sensor?.connectionType) === 'cloud';
+  const tuyaIntegration = [sensor?.protocol, sensor?.provider, sensor?.runtimeAdapter]
+    .some((value) => normalizedIntegrationName(value).includes('tuya'));
+  const knownDewinShape = sensor?.id === 'dewin-pond'
+    || normalizedIntegrationName(sensor?.type).includes('sondaesterna')
+    || normalizedIntegrationName(sensor?.type).includes('externalprobe');
+  return cloudConnection && tuyaIntegration && knownDewinShape;
+}
 
 export class HardwareRegistryError extends Error {
   constructor(message, code = 'INVALID_HARDWARE_CONFIGURATION') {
@@ -136,17 +152,19 @@ export class HardwareRegistryStore {
     this.idFactory = idFactory;
     this.writeQueue = Promise.resolve();
     this.bootstrapPromise = null;
+    this.pendingMigration = false;
   }
 
   async read() {
     try {
       const parsed = JSON.parse(await readFile(this.filePath, 'utf8'));
       for (const kind of HARDWARE_KINDS) for (const record of parsed[kind] || []) if (record.role && record.role !== 'none') this.legacyRoleAssignments[record.id] = record.role;
-      for (const sensor of parsed.sensors || []) if (!sensor.model && sensor.protocol === 'tuya-cloud') sensor.model = 'T & H Sensor with external probe';
+      for (const sensor of parsed.sensors || []) if (isLegacyDewinRecord(sensor)) sensor.model = DEWIN_SUPPORTED_MODEL;
       // Legacy Dewin identity was non-secret but lived in .env. Import it only when absent.
       for (const sensor of parsed.sensors || []) if (!sensor.tuyaDeviceId && sensor.id === 'dewin-pond' && process.env.TUYA_DEVICE_ID?.trim()) sensor.tuyaDeviceId = process.env.TUYA_DEVICE_ID.trim();
       const registry = validateHardwareRegistry(parsed, { allowIncomplete: true });
       if (Number(parsed.version || 1) < HARDWARE_REGISTRY_VERSION) {
+        this.pendingMigration = true;
         const defaultDewin = this.defaults.sensors.find((sensor) => sensor.id === 'dewin-pond');
         if (defaultDewin && !registry.sensors.some((sensor) => sensor.id === defaultDewin.id)) {
           registry.sensors.push(structuredClone(defaultDewin));
@@ -155,6 +173,7 @@ export class HardwareRegistryStore {
         // importato i ruoli legacy: così un arresto a metà startup non perde ruoli.
         return validateHardwareRegistry(registry, { allowIncomplete: true });
       }
+      this.pendingMigration = false;
       return registry;
     } catch (error) {
       if (error.code === 'ENOENT') return this.#bootstrap();
@@ -225,6 +244,14 @@ export class HardwareRegistryStore {
       const [removed] = registry[kind].splice(index, 1);
       return removed;
     });
+  }
+
+  async completePendingMigration(registry) {
+    if (!this.pendingMigration) return false;
+    const validated = validateHardwareRegistry(registry, { allowIncomplete: true });
+    await this.#persist(validated);
+    this.pendingMigration = false;
+    return true;
   }
 
   #mutate(operation) {
