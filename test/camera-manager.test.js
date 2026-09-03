@@ -150,7 +150,13 @@ test('camera worker and UI remain on-demand and enforce the safety timeout', asy
   assert.match(manager, /if \(this\.child\) return this\.snapshot\(\)/);
   assert.match(ui, /JSON\.stringify\(\{ active: !live \}\)/);
   assert.match(ui, /camera\.errorCode/);
+  assert.match(ui, /if \(currentCamera\) applyState\(currentCamera\)/);
+  assert.match(ui, /typeof camera\.assigned === 'boolean' \? camera/);
+  assert.match(ui, /camera\.assigned === false \? 'Nessuna telecamera assegnata'/);
+  const refreshFailure = ui.slice(ui.indexOf('async function refreshStatus'), ui.indexOf('async function toggleLive'));
+  assert.doesNotMatch(refreshFailure.slice(refreshFailure.indexOf('catch')), /identity\.textContent|image\.removeAttribute/);
   assert.match(ui, /pagehide[\s\S]*?active: false/);
+  assert.match(html, /id="camera-identity"[^>]*>Caricamento configurazione…</);
   assert.match(html, /id="camera-card"[\s\S]*?webcam\.svg[\s\S]*?Telecamera[\s\S]*?LIVESTREAM/);
   assert.match(css, /\.camera-media\s*\{[^}]*aspect-ratio:\s*16 \/ 9/);
 });

@@ -206,7 +206,7 @@ export class DewinService {
         this.errorActive = false;
         this.prolongedStaleLogged = false;
       } catch (refreshError) {
-        this.current = { ...this.current, stale: true };
+        this.current = { ...this.current, online: false, stale: true };
         if (!this.errorActive) this.logError(`[DEWIN] aggiornamento non riuscito: ${refreshError.message}`);
         this.errorActive = true;
         const updatedMs = this.current.updatedAt ? Date.parse(this.current.updatedAt) : 0;

@@ -9,7 +9,7 @@ export function formatCameraTimestamp(value) {
   }).format(new Date(value));
 }
 
-export function initCameraCard(container, fetchImpl = fetch) {
+export function initCameraCard(container, fetchImpl = fetch, initialCamera = null) {
   if (!container) return null;
   const image = container.querySelector('#camera-image');
   const status = container.querySelector('#camera-status');
@@ -21,6 +21,7 @@ export function initCameraCard(container, fetchImpl = fetch) {
   let pending = false;
   let frameTimer = null;
   let statusTimer = null;
+  let currentCamera = initialCamera;
 
   function stopLocalRefresh() {
     clearInterval(frameTimer);
@@ -34,9 +35,12 @@ export function initCameraCard(container, fetchImpl = fetch) {
   }
 
   function applyState(camera) {
+    if (!camera) return;
+    currentCamera = typeof camera.assigned === 'boolean' ? camera : { ...(currentCamera || {}), ...camera };
+    camera = currentCamera;
     identity.textContent = camera.alias
       ? [camera.alias, camera.model].filter(Boolean).join(' · ')
-      : 'Nessuna telecamera assegnata';
+      : camera.assigned === false ? 'Nessuna telecamera assegnata' : 'Telecamera configurata';
     live = Boolean(camera.live);
     container.classList.toggle('is-live', live);
     status.textContent = camera.status === 'LIVE'
@@ -47,11 +51,13 @@ export function initCameraCard(container, fetchImpl = fetch) {
           ? 'NON CONFIGURATA'
           : camera.status === 'ERROR'
             ? `ERRORE${camera.errorCode ? ` · ${camera.errorCode}` : ''}`
-            : 'AVVIO…';
+            : camera.status === 'UNAVAILABLE'
+              ? 'NON RAGGIUNGIBILE'
+              : 'AVVIO…';
     updatedAt.textContent = camera.status === 'ERROR' && camera.error
       ? camera.error
       : `Ultima immagine: ${formatCameraTimestamp(camera.updatedAt)}`;
-    button.disabled = pending || !camera.configured;
+    button.disabled = pending || !camera.configured || camera.runtimeActive === false;
     button.setAttribute('aria-pressed', String(live));
     buttonState.textContent = live ? 'ON' : 'OFF';
     if (camera.imageAvailable) refreshFrame(camera.imageVersion || Date.now());
@@ -95,7 +101,7 @@ export function initCameraCard(container, fetchImpl = fetch) {
       status.textContent = toggleError.message || 'ERRORE';
     } finally {
       pending = false;
-      button.disabled = false;
+      applyState(currentCamera);
       await refreshStatus();
     }
   }
@@ -113,6 +119,7 @@ export function initCameraCard(container, fetchImpl = fetch) {
   });
   image.addEventListener('error', () => container.classList.add('image-unavailable'));
   image.addEventListener('load', () => container.classList.remove('image-unavailable'));
+  if (currentCamera) applyState(currentCamera);
   void refreshStatus();
-  return { refreshStatus, toggleLive, stopLocalRefresh };
+  return { applyState, refreshStatus, toggleLive, stopLocalRefresh };
 }

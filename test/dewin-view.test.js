@@ -27,12 +27,12 @@ test('Pond card view exposes cached Dewin online and offline connection state', 
   assert.equal(dewinCardView(null).online, false);
 });
 
-test('Pond card source reads /api/dewin and never calls Tuya or a write endpoint', async () => {
+test('Pond card source reads the atomic dashboard sensor state and never calls Tuya or a write endpoint', async () => {
   const source = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
   const card = source.slice(source.indexOf('function pondTemperatureCard'), source.indexOf('function functionCard'));
-  assert.match(source, /fetch\('\/api\/dewin'/);
+  assert.match(source, /latestDewin = latestDashboard\.sensor/);
   assert.match(card, /dewinCardView\(dewin\)/);
-  assert.match(card, /sensorDashboardLabel\('pond_temperature', latestHardware/);
+  assert.match(card, /sensorDashboardLabel\('pond_temperature', dewin/);
   assert.doesNotMatch(card, /cardMainHeader\('Temperatura Acqua', 'Sonda DEWIN'/);
   assert.match(card, /view\.pondTemperature/);
   assert.match(card, /Ambiente/);

@@ -1,4 +1,4 @@
-import { buildDashboardFunctions, dashboardDevicesFromPayload, dashboardRefreshHealth, plugDashboardLabel, readDashboardSnapshot, sensorDashboardLabel, writeDashboardSnapshot } from './dashboard-model.js';
+import { buildDashboardFunctions, dashboardRefreshHealth, dashboardStateFromPayload, plugDashboardLabel, readDashboardSnapshot, sensorDashboardLabel, writeDashboardSnapshot } from './dashboard-model.js';
 import { initCameraCard } from './camera-view.js';
 import { dewinCardView, formatDewinValue } from './dewin-view.js';
 import { heaterControlView, requestHeaterState } from './heater-control.js';
@@ -12,11 +12,12 @@ const updateElement = document.querySelector('#last-update');
 const temperatureChartElement = document.querySelector('#temperature-chart-card');
 const cameraCardElement = document.querySelector('#camera-card');
 let latestDevices = [];
+let latestDashboard = { devices: [], sensor: null, camera: null, sensorHistory: null, outdoorTemperatures: null };
 let latestWeather = null;
 let latestDewin = null;
 let latestDewinHistory = null;
 let latestOutdoorTemperatures = null;
-let latestHardware = null;
+let cameraController = null;
 let heaterCommandPending = false;
 let heaterCommandMessage = '';
 let pumpCommandPending = false;
@@ -161,7 +162,7 @@ function pondTemperatureCard(dewin) {
   const unit = document.createElement('span');
   unit.className = 'pond-temperature-unit';
   unit.textContent = '°C';
-  const sensorSubtitle = sensorDashboardLabel('pond_temperature', latestHardware, dewin?.name || 'Sonda DEWIN');
+  const sensorSubtitle = sensorDashboardLabel('pond_temperature', dewin, dewin?.name || 'Sonda DEWIN');
   const heading = cardMainHeader('Temperatura Acqua', sensorSubtitle, temperatureIcon, value, unit, 'temperature-subtitle');
   card.append(heading);
 
@@ -171,8 +172,11 @@ function pondTemperatureCard(dewin) {
     const placeholderTitle = document.createElement('strong');
     placeholderTitle.textContent = 'Monitoraggio acqua';
     const placeholderText = document.createElement('span');
-    placeholderText.textContent = latestHardware?.sensors?.some((sensor) => sensor.role === 'pond_temperature')
-      ? 'Sensore non disponibile' : 'Sensore non configurato';
+    placeholderText.textContent = dewin?.availability === 'UNASSIGNED'
+      ? 'Sensore non configurato'
+      : dewin?.availability === 'OFFLINE'
+        ? 'Sensore configurato ma non disponibile'
+        : 'Caricamento dati sensore…';
     placeholder.append(placeholderTitle, placeholderText);
     card.append(placeholder);
     return card;
@@ -245,7 +249,7 @@ function functionCard(pondFunction, pumpFunction) {
   }
   const heading = cardMainHeader(
     functionTitle,
-    plugDashboardLabel(device, latestHardware),
+    plugDashboardLabel(device),
     functionIcon,
     primaryState,
     button,
@@ -363,45 +367,41 @@ async function refresh() {
     const weatherRequest = fetch('/api/weather', { cache: 'no-store' })
       .then(async (response) => (response.ok ? response.json() : null))
       .catch(() => null);
-    const dewinRequest = fetch('/api/dewin', { cache: 'no-store' })
-      .then(async (response) => (response.ok ? response.json() : null))
-      .catch(() => null);
     const dewinHistoryRequest = fetch('/api/dewin/history', { cache: 'no-store' })
       .then(async (response) => (response.ok ? response.json() : null))
       .catch(() => null);
     const outdoorTemperaturesRequest = fetch('/api/weather/hourly', { cache: 'no-store' })
       .then(async (response) => (response.ok ? response.json() : null))
       .catch(() => null);
-    const hardwareRequest = fetch('/api/hardware', { cache: 'no-store' })
-      .then(async (hardwareResponse) => (hardwareResponse.ok ? hardwareResponse.json() : null))
-      .catch(() => null);
     const response = await fetch('/api/devices', { cache: 'no-store' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const payload = await response.json();
-    latestDevices = dashboardDevicesFromPayload(latestDevices, payload);
-    writeDashboardSnapshot(sessionStorage, payload);
+    latestDashboard = dashboardStateFromPayload(latestDashboard, payload);
+    latestDevices = latestDashboard.devices;
+    latestDewin = latestDashboard.sensor;
     const weather = await weatherRequest;
     if (weather) latestWeather = weather;
-    const dewin = await dewinRequest;
-    if (dewin) latestDewin = dewin;
     const dewinHistory = await dewinHistoryRequest;
     if (dewinHistory) latestDewinHistory = dewinHistory;
     const outdoorTemperatures = await outdoorTemperaturesRequest;
     if (outdoorTemperatures) latestOutdoorTemperatures = outdoorTemperatures;
-    const hardware = await hardwareRequest;
-    if (hardware) latestHardware = hardware;
+    latestDashboard = dashboardStateFromPayload(latestDashboard, {
+      sensorHistory: latestDewinHistory, outdoorTemperatures: latestOutdoorTemperatures,
+    });
+    writeDashboardSnapshot(sessionStorage, { ...latestDashboard, dashboardVersion: 2, complete: true });
     renderDevices(latestDevices);
+    cameraController?.applyState(latestDashboard.camera);
     try {
       renderTemperatureChart(
         temperatureChartElement, latestDewinHistory, latestDewin, latestOutdoorTemperatures,
-        sensorDashboardLabel('pond_temperature', latestHardware, latestDewin?.name || ''),
+        sensorDashboardLabel('pond_temperature', latestDewin, latestDewin?.name || ''),
       );
     } catch {
       console.warn('Grafico temperature non aggiornato; restano visibili gli ultimi dati validi.');
     }
     mainRefreshFailures = dashboardRefreshHealth(mainRefreshFailures, true).failures;
     retryAttempt = 0;
-    statusElement.textContent = 'Tutte le funzioni sono online';
+    statusElement.textContent = 'Dati di sistema aggiornati';
     statusElement.className = 'status-message is-ok';
     updateElement.textContent = `Ultimo aggiornamento: ${new Date().toLocaleTimeString('it-IT')}`;
     return true;
@@ -429,8 +429,13 @@ function scheduleRefresh(delay) {
 
 const cachedSnapshot = readDashboardSnapshot(sessionStorage);
 if (cachedSnapshot) {
+  latestDashboard = cachedSnapshot;
   latestDevices = cachedSnapshot.devices.map((device) => ({ ...device, cached: true }));
+  latestDewin = cachedSnapshot.sensor;
+  latestDewinHistory = cachedSnapshot.sensorHistory;
+  latestOutdoorTemperatures = cachedSnapshot.outdoorTemperatures;
+  statusElement.textContent = 'Dati precedenti disponibili · aggiornamento in corso';
 }
 renderDevices(latestDevices);
 scheduleRefresh(0);
-initCameraCard(cameraCardElement);
+cameraController = initCameraCard(cameraCardElement, fetch, latestDashboard.camera);

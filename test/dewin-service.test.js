@@ -138,12 +138,16 @@ test('Dewin service keeps last valid data, marks errors stale and recovers', asy
   assert.equal(cached.externalProbeTemperature.value, valid.externalProbeTemperature.value);
   assert.equal(cached.updatedAt, valid.updatedAt);
   assert.equal(cached.stale, true);
+  assert.equal(cached.online, false);
   await service.refresh();
+  assert.equal(service.snapshot().externalProbeTemperature.value, valid.externalProbeTemperature.value);
+  assert.equal(service.snapshot().online, false);
   assert.equal(errors.filter((message) => message.includes('aggiornamento non riuscito')).length, 1);
   failing = false;
   now += 60_000;
   await service.refresh();
   assert.equal(service.snapshot().stale, false);
+  assert.equal(service.snapshot().online, true);
   assert.ok(logs.some((message) => message.includes('ripristinato')));
 });
 

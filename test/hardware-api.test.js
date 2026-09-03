@@ -116,6 +116,22 @@ test('hardware API represents configured Dewin role and current DewinService sta
   }, { dewinConfigured: true, dewinSnapshot: { available: true, online: true } });
 });
 
+test('dashboard API keeps assigned sensor and camera identity when their live state is unavailable', async () => {
+  await withHardwareApi(async ({ baseUrl }) => {
+    const payload = await (await fetch(`${baseUrl}/api/devices`)).json();
+    assert.equal(payload.dashboardVersion, 2);
+    assert.equal(payload.complete, true);
+    assert.deepEqual(
+      { assigned: payload.sensor.assigned, id: payload.sensor.hardwareId, alias: payload.sensor.alias, online: payload.sensor.online },
+      { assigned: true, id: 'dewin-pond', alias: 'Dewin Pond', online: false },
+    );
+    assert.deepEqual(
+      { assigned: payload.camera.assigned, id: payload.camera.deviceId, alias: payload.camera.alias },
+      { assigned: true, id: 'tapo-c410-pond', alias: 'C410 Pond' },
+    );
+  }, { dewinConfigured: true, dewinSnapshot: { available: false, online: false, stale: true } });
+});
+
 test('dashboard and Settings expose the same cached Dewin online and offline state', async () => {
   for (const online of [true, false]) {
     await withHardwareApi(async ({ baseUrl, dewinService }) => {

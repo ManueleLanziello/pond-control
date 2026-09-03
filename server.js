@@ -252,19 +252,53 @@ export function createPondServer({
   };
   const sensors = sensorRuntimeManager || legacyRuntimeManager(dewinService, 'pond_temperature', UNAVAILABLE_DEWIN_SERVICE.snapshot);
   const cameras = cameraRuntimeManager || legacyRuntimeManager(cameraManager, 'pond_camera', UNAVAILABLE_CAMERA_MANAGER.snapshot);
+  let activeReconciliation = null;
   async function reconcileRuntime() {
-    const registry = await hardwareStore.read();
-    const runtimeDevices = registry.plugs.filter(isRuntimeEligiblePlug).map(runtimePlugConfiguration);
-    if (typeof deviceManager.reconcileDevices === 'function') deviceManager.reconcileDevices(runtimeDevices);
-    if (typeof roleStore.reconcileDevices === 'function') await roleStore.reconcileDevices(
-      [...registry.plugs, ...registry.sensors, ...registry.cameras], hardwareStore.legacyRoleAssignments,
-    );
-    const storedAssignments = await roleStore.read();
-    const assignments = typeof roleStore.reconcileDevices === 'function'
-      ? storedAssignments : { ...hardwareStore.legacyRoleAssignments, ...storedAssignments };
-    await sensors.reconcile(registry.sensors.filter((record) => isRuntimeEligible('sensor', record)).map((record) => runtimeConfiguration('sensor', record)), assignments);
-    await cameras.reconcile(registry.cameras.filter((record) => isRuntimeEligible('camera', record)).map((record) => runtimeConfiguration('camera', record)), assignments);
-    return { registry, assignments };
+    if (activeReconciliation) return activeReconciliation;
+    const operation = (async () => {
+      const registry = await hardwareStore.read();
+      const runtimeDevices = registry.plugs.filter(isRuntimeEligiblePlug).map(runtimePlugConfiguration);
+      if (typeof deviceManager.reconcileDevices === 'function') deviceManager.reconcileDevices(runtimeDevices);
+      if (typeof roleStore.reconcileDevices === 'function') await roleStore.reconcileDevices(
+        [...registry.plugs, ...registry.sensors, ...registry.cameras], hardwareStore.legacyRoleAssignments,
+      );
+      const storedAssignments = await roleStore.read();
+      const assignments = typeof roleStore.reconcileDevices === 'function'
+        ? storedAssignments : { ...hardwareStore.legacyRoleAssignments, ...storedAssignments };
+      await sensors.reconcile(registry.sensors.filter((record) => isRuntimeEligible('sensor', record)).map((record) => runtimeConfiguration('sensor', record)), assignments);
+      await cameras.reconcile(registry.cameras.filter((record) => isRuntimeEligible('camera', record)).map((record) => runtimeConfiguration('camera', record)), assignments);
+      return { registry, assignments };
+    })();
+    activeReconciliation = operation;
+    try { return await operation; } finally { if (activeReconciliation === operation) activeReconciliation = null; }
+  }
+  async function sensorDashboardState(registry, assignments) {
+    const hardwareId = Object.keys(assignments).find((id) => assignments[id] === 'pond_temperature') || null;
+    const configured = registry.sensors.find((item) => item.id === hardwareId) || null;
+    if (!configured) return { assigned: false, availability: 'UNASSIGNED', hardwareId: null, alias: null, model: null, runtimeActive: false, ...UNAVAILABLE_DEWIN_SERVICE.snapshot() };
+    let snapshot;
+    try { snapshot = await sensors.snapshot('pond_temperature'); } catch { snapshot = UNAVAILABLE_DEWIN_SERVICE.snapshot(); }
+    const runtimeActive = sensors.has(hardwareId);
+    const availability = !runtimeActive || (!snapshot?.available && snapshot?.stale)
+      ? 'OFFLINE' : snapshot?.stale ? 'STALE' : snapshot?.available ? 'ONLINE' : 'LOADING';
+    return {
+      ...snapshot, assigned: true, hardwareId, alias: configured.alias, model: configured.model,
+      runtimeActive, availability, online: Boolean(snapshot?.online), stale: Boolean(snapshot?.stale),
+    };
+  }
+  async function cameraDashboardState(registry, assignments) {
+    const deviceId = Object.keys(assignments).find((id) => assignments[id] === 'pond_camera') || null;
+    const configured = registry.cameras.find((item) => item.id === deviceId) || null;
+    if (!configured) return { assigned: false, availability: 'UNASSIGNED', deviceId: null, alias: null, model: null, runtimeActive: false, ...(await UNAVAILABLE_CAMERA_MANAGER.snapshot()) };
+    let snapshot;
+    try { snapshot = await cameras.snapshot('pond_camera'); } catch { snapshot = await UNAVAILABLE_CAMERA_MANAGER.snapshot(); }
+    const runtimeActive = cameras.has(deviceId);
+    return {
+      ...snapshot, assigned: true, deviceId, alias: configured.alias, model: configured.model, runtimeActive,
+      availability: runtimeActive && snapshot.status !== 'ERROR' ? 'ONLINE' : 'OFFLINE',
+      configured: Boolean(snapshot?.configured || configured.configurationStatus === 'complete'),
+      status: runtimeActive ? snapshot.status : 'UNAVAILABLE',
+    };
   }
   const runtimeHasDevice = (id) => typeof deviceManager.hasDevice === 'function'
     ? deviceManager.hasDevice(id)
@@ -290,10 +324,10 @@ export function createPondServer({
           response.end();
           return;
         }
-        const { registry, assignments } = await reconcileRuntime(); const deviceId = Object.keys(assignments).find((id) => assignments[id] === 'pond_camera');
-        const configured = registry.cameras.find((item) => item.id === deviceId);
-        const snapshot = await cameras.snapshot('pond_camera');
-        sendJson(response, 200, dynamicCameras ? { ...snapshot, deviceId: deviceId || null, alias: configured?.alias || null, model: configured?.model || null } : snapshot);
+        const { registry, assignments } = await reconcileRuntime();
+        sendJson(response, 200, dynamicCameras
+          ? await cameraDashboardState(registry, assignments)
+          : await cameras.snapshot('pond_camera'));
         return;
       }
       if (url.pathname === '/api/camera/image') {
@@ -340,10 +374,14 @@ export function createPondServer({
             type: 'SMART.TAPOPLUG', state: null, rssi: null, protocol: plug.protocol,
             online: false, communicationDegraded: false, consecutiveFailures: 0, lastReadAt: null,
           }),
+          configuredName: plug.alias,
           role: roleAssignments[plug.id] || 'none',
           runtimeActive: liveDevices.has(plug.id),
         }));
-        sendJson(response, 200, { devices: result });
+        const [sensor, camera] = await Promise.all([
+          sensorDashboardState(registry, roleAssignments), cameraDashboardState(registry, roleAssignments),
+        ]);
+        sendJson(response, 200, { dashboardVersion: 2, complete: true, devices: result, sensor, camera });
         return;
       }
       if (url.pathname === '/api/weather') {
@@ -370,10 +408,10 @@ export function createPondServer({
           response.end();
           return;
         }
-        const { registry, assignments } = await reconcileRuntime(); const deviceId = Object.keys(assignments).find((id) => assignments[id] === 'pond_temperature');
-        const configured = registry.sensors.find((item) => item.id === deviceId);
-        const snapshot = await sensors.snapshot('pond_temperature');
-        sendJson(response, 200, dynamicSensors ? { ...snapshot, hardwareId: deviceId || null, alias: configured?.alias || null, model: configured?.model || null } : snapshot);
+        const { registry, assignments } = await reconcileRuntime();
+        sendJson(response, 200, dynamicSensors
+          ? await sensorDashboardState(registry, assignments)
+          : await sensors.snapshot('pond_temperature'));
         return;
       }
       if (url.pathname === '/api/dewin/history') {

@@ -104,6 +104,19 @@ test('invalid roles and unknown device ids are rejected', async () => {
   });
 });
 
+test('concurrent request reconciliation is serialized, idempotent and role preserving', async () => {
+  await withRoleStore(async ({ store, filePath }) => {
+    await store.assign('tapo-p105-pond', 'pump');
+    await store.assign('tapo-p100m-pond', 'heater');
+    const reconciled = await Promise.all(Array.from({ length: 25 }, () => store.reconcileDevices(devices)));
+    assert.ok(reconciled.every((assignments) => assignments['tapo-p105-pond'] === 'pump'));
+    assert.ok(reconciled.every((assignments) => assignments['tapo-p100m-pond'] === 'heater'));
+    assert.deepEqual(JSON.parse(await readFile(filePath, 'utf8')).assignments, {
+      'tapo-p105-pond': 'pump', 'tapo-p100m-pond': 'heater',
+    });
+  });
+});
+
 test('role API writes only local configuration and never reads or writes a Tapo device', async () => {
   await withRoleStore(async ({ store }) => {
     await withRoleServer(store, async (baseUrl, tapoReads) => {

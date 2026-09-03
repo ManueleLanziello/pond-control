@@ -60,6 +60,44 @@ test('camera role reassignment switches status, snapshot and live runtime withou
   await manager.reconcile([], { b: 'pond_camera' }); assert.deepEqual(await manager.snapshot('pond_camera'), { configured: false, imageAvailable: false }); assert.ok(stopped.includes('192.0.2.2'));
 });
 
+test('snapshot waits for reconciliation and never observes the runtime replacement gap', async () => {
+  let releaseStart;
+  const startGate = new Promise((resolve) => { releaseStart = resolve; });
+  const manager = new RoleRuntimeManager({
+    category: 'sensor', autoStart: true, emptySnapshot: () => ({ available: false }),
+    createRuntime: (record) => ({
+      start: () => record.tuyaDeviceId === 'new' ? startGate : undefined,
+      snapshot: () => ({ available: true, source: record.tuyaDeviceId }),
+      stop: () => {},
+    }),
+  });
+  await manager.reconcile([sensor('logical', 'old')], { logical: 'pond_temperature' });
+  const replacing = manager.reconcile([sensor('logical', 'new')], { logical: 'pond_temperature' });
+  let snapshotSettled = false;
+  const snapshot = manager.snapshot('pond_temperature').then((value) => { snapshotSettled = true; return value; });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(snapshotSettled, false);
+  releaseStart();
+  await replacing;
+  assert.equal((await snapshot).source, 'new');
+});
+
+test('a failed runtime reconciliation does not poison all later reconciliations', async () => {
+  let fail = true;
+  const manager = new RoleRuntimeManager({
+    category: 'sensor', emptySnapshot: () => ({ available: false }),
+    createRuntime: (record) => {
+      if (fail) throw new Error('simulated runtime construction failure');
+      return { snapshot: () => ({ available: true, source: record.tuyaDeviceId }) };
+    },
+  });
+  await assert.rejects(manager.reconcile([sensor('logical', 'one')], { logical: 'pond_temperature' }));
+  assert.equal(manager.recordIdForRole('pond_temperature'), 'logical');
+  fail = false;
+  await manager.reconcile([sensor('logical', 'one')], { logical: 'pond_temperature' });
+  assert.equal((await manager.snapshot('pond_temperature')).source, 'one');
+});
+
 test('role store atomically transfers sensor and camera roles and remains the only persisted role source', async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'pond-role-all-')); const filePath = path.join(directory, 'roles.json');
   const devices = [sensor('s1', 'one'), sensor('s2', 'two'), camera('c1', '192.0.2.1', 'AA:BB:CC:DD:EE:01'), camera('c2', '192.0.2.2', 'AA:BB:CC:DD:EE:02')];
