@@ -16,6 +16,7 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
+    "@smarthome/core": "file:../smarthome-core",
     "@noble/curves": "^2.3.0",
     "node-kasa": "^0.10.2"
   }

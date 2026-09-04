@@ -85,6 +85,26 @@ test('complete snapshot exposes main, optional and full dynamic datapoints', () 
   assert.equal(snapshot.stale, false);
 });
 
+test('adapter Core mantiene il formato pubblico flat di Pond-Control', async () => {
+  const client = {
+    deviceId: DEVICE_ID,
+    async readDevice() {
+      return {
+        device: { id: DEVICE_ID, online: true, name: 'T & H Sensor with external probe', category: 'qxj' },
+        statuses: statuses(),
+        specification: specification(),
+      };
+    },
+  };
+  const service = new DewinService({ client, now: () => Date.parse('2026-08-27T14:00:00.000Z') });
+  const snapshot = await service.refresh();
+  assert.equal(snapshot.available, true);
+  assert.equal(snapshot.ambientTemperature.value, 28.9);
+  assert.equal(snapshot.externalProbeTemperature.value, 28.5);
+  assert.equal(snapshot.datapoints.length, 8);
+  assert.equal(snapshot.stale, false);
+});
+
 test('cloud client authenticates once, reuses the token and performs GET requests only', async () => {
   let now = Date.parse('2026-08-27T14:00:00.000Z');
   const mock = cloudMock();
