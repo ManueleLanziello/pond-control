@@ -19,7 +19,7 @@ export function pumpControlView(pondFunction, pending = false) {
 }
 
 export async function requestPumpState(fetchImpl, state) {
-  const response = await fetchImpl('/api/functions/pump/state', {
+  const response = await fetchImpl(pondControlPath('/api/functions/pump/state'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ state }),
@@ -30,3 +30,4 @@ export async function requestPumpState(fetchImpl, state) {
   }
   return payload;
 }
+import { pondControlPath } from './base-path.js';

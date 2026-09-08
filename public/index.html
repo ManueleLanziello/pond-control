@@ -9,16 +9,16 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Pond Control</title>
-  <link rel="manifest" href="/manifest.webmanifest">
-  <link rel="icon" href="/icons/pond.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="/icons/pond-192.png">
-  <link rel="stylesheet" href="/style.css">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/pond.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/pond-192.png">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body class="dashboard-body">
   <main class="dashboard-shell">
     <header class="dashboard-header">
       <div class="brand">
-        <img class="brand-mark" src="/icons/pond.svg" alt="">
+        <img class="brand-mark" src="icons/pond.svg" alt="">
         <div>
           <h1><span>POND</span> CONTROL</h1>
           <p>Monitoraggio impianto laghetto</p>
@@ -33,8 +33,8 @@
         </div>
       </section>
 
-      <a class="settings-link" href="/settings" aria-label="Apri impostazioni">
-        <img src="/icons/settings.svg" alt="">
+      <a class="settings-link" href="settings" aria-label="Apri impostazioni">
+        <img src="icons/settings.svg" alt="">
         <strong>Impostazioni</strong>
       </a>
     </header>
@@ -46,7 +46,7 @@
       <article id="camera-card" class="insight-card camera-card" aria-labelledby="camera-title">
         <header class="camera-card-header">
           <div class="camera-card-heading">
-            <img class="camera-card-icon" src="/icons/webcam.svg" alt="">
+            <img class="camera-card-icon" src="icons/webcam.svg" alt="">
             <div>
               <h2 id="camera-title">Telecamera</h2>
               <span id="camera-identity" class="camera-card-subtitle">Caricamento configurazione…</span>
@@ -55,7 +55,7 @@
           <strong id="camera-status" class="camera-status" aria-live="polite">CARICAMENTO…</strong>
         </header>
         <div class="camera-media">
-          <img id="camera-image" src="/api/camera/image" alt="Vista della telecamera Pond">
+          <img id="camera-image" src="api/camera/image" alt="Vista della telecamera Pond">
           <span class="camera-image-placeholder">Nessuna immagine disponibile</span>
         </div>
         <footer class="camera-controls">
@@ -74,7 +74,7 @@
       <span id="last-update">Ultimo aggiornamento: --:--:--</span>
     </footer>
   </main>
-  <script type="module" src="/app.js"></script>
-  <script type="module" src="/pwa.js"></script>
+  <script type="module" src="app.js"></script>
+  <script type="module" src="pwa.js"></script>
 </body>
 </html>

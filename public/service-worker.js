@@ -8,9 +8,10 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const requestUrl = new URL(event.request.url);
+  const apiPath = new URL('api/', self.registration.scope).pathname;
   const isStaticGet = event.request.method === 'GET'
     && requestUrl.origin === self.location.origin
-    && !requestUrl.pathname.startsWith('/api/');
+    && !requestUrl.pathname.startsWith(apiPath);
 
   if (isStaticGet) event.respondWith(fetch(event.request));
 });

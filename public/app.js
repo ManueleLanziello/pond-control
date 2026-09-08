@@ -5,6 +5,7 @@ import { heaterControlView, requestHeaterState } from './heater-control.js';
 import { pumpControlView, requestPumpState } from './pump-control.js';
 import { renderTemperatureChart } from './temperature-chart.js';
 import { weatherIconForCode } from './weather-icons.js';
+import { pondControlPath } from './base-path.js';
 
 const devicesElement = document.querySelector('#devices');
 const statusElement = document.querySelector('#status-message');
@@ -364,16 +365,16 @@ async function refresh() {
   if (refreshInProgress) return false;
   refreshInProgress = true;
   try {
-    const weatherRequest = fetch('/api/weather', { cache: 'no-store' })
+    const weatherRequest = fetch(pondControlPath('/api/weather'), { cache: 'no-store' })
       .then(async (response) => (response.ok ? response.json() : null))
       .catch(() => null);
-    const dewinHistoryRequest = fetch('/api/dewin/history', { cache: 'no-store' })
+    const dewinHistoryRequest = fetch(pondControlPath('/api/dewin/history'), { cache: 'no-store' })
       .then(async (response) => (response.ok ? response.json() : null))
       .catch(() => null);
-    const outdoorTemperaturesRequest = fetch('/api/weather/hourly', { cache: 'no-store' })
+    const outdoorTemperaturesRequest = fetch(pondControlPath('/api/weather/hourly'), { cache: 'no-store' })
       .then(async (response) => (response.ok ? response.json() : null))
       .catch(() => null);
-    const response = await fetch('/api/devices', { cache: 'no-store' });
+    const response = await fetch(pondControlPath('/api/devices'), { cache: 'no-store' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const payload = await response.json();
     latestDashboard = dashboardStateFromPayload(latestDashboard, payload);

@@ -32,7 +32,7 @@ export function heaterControlView(pondFunction, pumpFunction, pending = false) {
 }
 
 export async function requestHeaterState(fetchImpl, state) {
-  const response = await fetchImpl('/api/functions/heater/state', {
+  const response = await fetchImpl(pondControlPath('/api/functions/heater/state'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ state }),
@@ -43,3 +43,4 @@ export async function requestHeaterState(fetchImpl, state) {
   }
   return payload;
 }
+import { pondControlPath } from './base-path.js';

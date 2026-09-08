@@ -31,7 +31,7 @@ export function initCameraCard(container, fetchImpl = fetch, initialCamera = nul
   }
 
   function refreshFrame(version = Date.now()) {
-    image.src = `/api/camera/image?v=${version}`;
+    image.src = `${pondControlPath('/api/camera/image')}?v=${version}`;
   }
 
   function applyState(camera) {
@@ -72,7 +72,7 @@ export function initCameraCard(container, fetchImpl = fetch, initialCamera = nul
 
   async function refreshStatus() {
     try {
-      const response = await fetchImpl('/api/camera/status', { cache: 'no-store' });
+      const response = await fetchImpl(pondControlPath('/api/camera/status'), { cache: 'no-store' });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       applyState(await response.json());
     } catch {
@@ -89,7 +89,7 @@ export function initCameraCard(container, fetchImpl = fetch, initialCamera = nul
     pending = true;
     button.disabled = true;
     try {
-      const response = await fetchImpl('/api/camera/live', {
+      const response = await fetchImpl(pondControlPath('/api/camera/live'), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ active: !live }),
@@ -110,7 +110,7 @@ export function initCameraCard(container, fetchImpl = fetch, initialCamera = nul
   window.addEventListener('pagehide', () => {
     stopLocalRefresh();
     if (!live) return;
-    void fetchImpl('/api/camera/live', {
+    void fetchImpl(pondControlPath('/api/camera/live'), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ active: false }),
@@ -123,3 +123,4 @@ export function initCameraCard(container, fetchImpl = fetch, initialCamera = nul
   void refreshStatus();
   return { applyState, refreshStatus, toggleLive, stopLocalRefresh };
 }
+import { pondControlPath } from './base-path.js';

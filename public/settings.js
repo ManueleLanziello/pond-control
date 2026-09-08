@@ -1,3 +1,5 @@
+import { pondControlPath } from './base-path.js';
+
 const statusElement = document.querySelector('#settings-status');
 const dialog = document.querySelector('#hardware-dialog');
 const form = document.querySelector('#hardware-form');
@@ -49,7 +51,7 @@ async function request(url, options = {}) {
 }
 
 async function updateRole(kind, device, role) {
-  await request(`/api/hardware/${kind}/${encodeURIComponent(device.id)}`, {
+  await request(pondControlPath(`/api/hardware/${kind}/${encodeURIComponent(device.id)}`), {
     method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role }),
   });
   await loadHardware('Ruolo aggiornato');
@@ -111,7 +113,7 @@ function renderHardware() { Object.keys(CONTAINERS).forEach(renderKind); }
 function showError(error) { statusElement.textContent = error.message || 'Operazione non riuscita.'; statusElement.className = 'status-message has-error'; }
 
 async function loadHardware(message = 'Configurazione pronta') {
-  hardware = await request('/api/hardware', { cache: 'no-store' }); renderHardware();
+  hardware = await request(pondControlPath('/api/hardware'), { cache: 'no-store' }); renderHardware();
   statusElement.textContent = message; statusElement.className = 'status-message is-ok';
 }
 
@@ -181,7 +183,7 @@ async function verifyForm() {
   const kind = document.querySelector('#hardware-kind').value;
   formStatus.textContent = 'Verifica read-only in corso…';
   try {
-    const result = await request(`/api/hardware/${kind}/verify`, {
+    const result = await request(pondControlPath(`/api/hardware/${kind}/verify`), {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(formPayload()),
     });
     formVerified = result.verified; saveButton.disabled = !formVerified;
@@ -194,20 +196,20 @@ async function verifyForm() {
 async function saveForm(event) {
   event.preventDefault();
   const kind = document.querySelector('#hardware-kind').value; const id = document.querySelector('#hardware-id').value;
-  await request(id ? `/api/hardware/${kind}/${encodeURIComponent(id)}` : `/api/hardware/${kind}`, {
+  await request(pondControlPath(id ? `/api/hardware/${kind}/${encodeURIComponent(id)}` : `/api/hardware/${kind}`), {
     method: id ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(formPayload()),
   });
   dialog.close(); await loadHardware('Configurazione salvata');
 }
 
 async function verifySaved(kind, device) {
-  await request(`/api/hardware/${kind}/${encodeURIComponent(device.id)}/verify`, { method: 'POST' });
+  await request(pondControlPath(`/api/hardware/${kind}/${encodeURIComponent(device.id)}/verify`), { method: 'POST' });
   await loadHardware('Dispositivo verificato in sola lettura');
 }
 
 async function removeDevice(kind, device) {
   if (!window.confirm(`Rimuovere ${device.alias}?`)) return;
-  await request(`/api/hardware/${kind}/${encodeURIComponent(device.id)}`, { method: 'DELETE' });
+  await request(pondControlPath(`/api/hardware/${kind}/${encodeURIComponent(device.id)}`), { method: 'DELETE' });
   await loadHardware('Dispositivo rimosso dalla configurazione');
 }
 
