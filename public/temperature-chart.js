@@ -1,3 +1,5 @@
+import { pondControlPath } from './base-path.js';
+
 export const TEMPERATURE_CHART_RANGE = Object.freeze({
   xMinMinutes: 0,
   xMaxMinutes: 1440,
@@ -127,7 +129,7 @@ export function renderTemperatureChart(container, history, snapshot, outdoor, se
   titleWrap.className = 'temperature-chart-heading';
   const icon = document.createElement('img');
   icon.className = 'temperature-chart-icon';
-  icon.src = '/icons/history.svg';
+  icon.src = pondControlPath('/icons/history.svg');
   icon.alt = '';
   const titleText = document.createElement('div');
   const title = document.createElement('h2');

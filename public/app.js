@@ -32,7 +32,7 @@ const DASHBOARD_RETRY_DELAYS_MS = [1000, 2000, 5000];
 function iconImage(source, className) {
   const image = document.createElement('img');
   image.className = className;
-  image.src = source;
+  image.src = pondControlPath(source);
   image.alt = '';
   image.setAttribute('aria-hidden', 'true');
   return image;
