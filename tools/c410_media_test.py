@@ -17,14 +17,39 @@ from pathlib import Path
 import imageio_ffmpeg
 from pytapo import StreamType, Tapo
 
-from c410_probe import CAMERA_IP, load_tapo_credentials, redact
-
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_DIR = PROJECT_ROOT / "test-output" / "c410"
+CAMERA_IP = os.environ.get("TAPO_CAMERA_IP", "")
+
+
+def load_tapo_credentials() -> tuple[str, str]:
+    values: dict[str, str] = {}
+    env_path = PROJECT_ROOT / ".env"
+    if env_path.exists():
+        for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, value = line.split("=", 1)
+                if key.strip() in {"TAPO_USERNAME", "TAPO_PASSWORD"}:
+                    values[key.strip()] = value.strip().strip("\"'")
+    username = os.environ.get("TAPO_USERNAME") or values.get("TAPO_USERNAME", "")
+    password = os.environ.get("TAPO_PASSWORD") or values.get("TAPO_PASSWORD", "")
+    if not username or not password:
+        raise RuntimeError("TAPO_USERNAME e TAPO_PASSWORD non disponibili.")
+    return username, password
+
+
+def redact(message: object, secrets: tuple[str, ...]) -> str:
+    safe = str(message)
+    for secret in secrets:
+        if secret:
+            safe = safe.replace(secret, "[REDACTED]")
+    return safe
 
 
 def create_camera() -> Tapo:
+    if not CAMERA_IP:
+        raise RuntimeError("TAPO_CAMERA_IP non disponibile.")
     username, password = load_tapo_credentials()
     return Tapo(
         CAMERA_IP,

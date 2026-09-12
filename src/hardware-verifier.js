@@ -1,9 +1,6 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { verifyTapoC410 } from '@smarthome/core';
 import { TpapClient } from './tpap/client.js';
 import { HardwareRegistryError, normalizeMac } from './hardware-registry.js';
-
-const execFileAsync = promisify(execFile);
 
 function decodeAlias(value) {
   if (!value) return null;
@@ -48,29 +45,8 @@ export async function verifyTapoPlug(configured, { username, password, timeout =
   }
 }
 
-function findValue(value, keys) {
-  if (!value || typeof value !== 'object') return null;
-  for (const [key, child] of Object.entries(value)) {
-    if (keys.includes(key.toLowerCase()) && child) return child;
-    const nested = findValue(child, keys);
-    if (nested) return nested;
-  }
-  return null;
-}
-
 export async function verifyTapoCamera(configured, { pythonPath, probePath, env = process.env } = {}) {
-  const { stdout } = await execFileAsync(pythonPath, [probePath], {
-    env: { ...env, TAPO_CAMERA_IP: configured.ip }, timeout: 30_000, windowsHide: true,
-  });
-  const report = JSON.parse(stdout);
-  if (!report.authentication) throw new HardwareRegistryError('Autenticazione telecamera non riuscita.', 'AUTHENTICATION_FAILED');
-  const detected = {
-    model: findValue(report.device_info, ['device_model', 'model']),
-    alias: findValue(report.device_info, ['alias', 'device_name', 'name']),
-    mac: findValue(report.device_info, ['mac', 'mac_address']),
-    protocol: report.transport || 'PyTapo HTTPS',
-    online: true,
-  };
+  const detected = await verifyTapoC410(configured, { pythonPath, probePath, env });
   assertHardwareIdentity(configured, detected);
   return detected;
 }

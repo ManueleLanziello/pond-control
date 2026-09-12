@@ -6,6 +6,7 @@ import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import test from 'node:test';
 import { CameraManager, CAMERA_SAFETY_TIMEOUT_MS, defaultCameraPython } from '../src/camera-manager.js';
+import { c410WorkerPath } from '@smarthome/core';
 
 class FakeWorker extends EventEmitter {
   constructor() {
@@ -135,8 +136,8 @@ test('missing FFmpeg dependency is classified and stderr is redacted', async () 
 
 test('camera worker and UI remain on-demand and enforce the safety timeout', async () => {
   const [worker, manager, ui, html, css] = await Promise.all([
-    readFile(new URL('../camera/c410_worker.py', import.meta.url), 'utf8'),
-    readFile(new URL('../src/camera-manager.js', import.meta.url), 'utf8'),
+    readFile(c410WorkerPath(), 'utf8'),
+    readFile(path.join(path.dirname(c410WorkerPath()), 'camera-manager.js'), 'utf8'),
     readFile(new URL('../public/camera-view.js', import.meta.url), 'utf8'),
     readFile(new URL('../public/index.html', import.meta.url), 'utf8'),
     readFile(new URL('../public/style.css', import.meta.url), 'utf8'),

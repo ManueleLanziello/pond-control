@@ -5,7 +5,9 @@ import { loadEnvFile } from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { devices as defaultDevices } from './devices.js';
 import { WEATHER_CONFIG } from './config/weather.js';
-import { CameraControlError, CameraManager, defaultCameraPython } from './src/camera-manager.js';
+import {
+  c410ProbePath, c410WorkerPath, CameraControlError, CameraManager, defaultCameraPython, RoleRuntimeManager,
+} from '@smarthome/core';
 import { DeviceManager } from './src/device-manager.js';
 import { DeviceRoleStore, VALID_DEVICE_ROLES } from './src/device-roles.js';
 import { createDewinServiceFromEnvironment } from './src/dewin-service.js';
@@ -22,7 +24,6 @@ import { createSafetyMonitor } from './src/safety-monitor.js';
 import { TpapClient } from './src/tpap/client.js';
 import { WeatherService } from './src/weather-service.js';
 import { OutdoorTemperatureService } from './src/outdoor-temperature-service.js';
-import { RoleRuntimeManager } from './src/role-runtime-manager.js';
 import {
   isRuntimeEligible, isRuntimeEligiblePlug, requireSupportedDeviceModel, requireSupportedPlugModel, runtimeConfiguration,
   runtimePlugConfiguration, supportedCameraModel, supportedPlugModel, supportedSensorModel,
@@ -105,6 +106,10 @@ function credentialsFromEnvironment() {
   const password = process.env.TAPO_PASSWORD;
   if (!username || !password) throw new Error('Credenziali Tapo non disponibili nel processo server.');
   return { username, password };
+}
+
+function cameraEnvironment() {
+  return { ...process.env, ...credentialsFromEnvironment() };
 }
 
 function dewinConfiguredFromEnvironment() {
@@ -235,7 +240,7 @@ export function createPondServer({
     ...credentialsFromEnvironment(), timeout: Number(process.env.TAPO_DEVICE_TIMEOUT_MS || 5000),
   }),
   verifyCamera = (candidate) => verifyTapoCamera(candidate, {
-    pythonPath: defaultCameraPython(ROOT), probePath: path.join(ROOT, 'tools', 'c410_probe.py'),
+    pythonPath: defaultCameraPython(ROOT), probePath: c410ProbePath(), env: cameraEnvironment(),
   }),
   verifySensor = null,
 } = {}) {
@@ -690,7 +695,7 @@ if (isMain) {
     });
     const cameraRuntimeManager = new RoleRuntimeManager({ category: 'camera', emptySnapshot: UNAVAILABLE_CAMERA_MANAGER.snapshot,
       createRuntime: (record, signature) => new CameraManager({ ip: record.ip, pythonPath: defaultCameraPython(ROOT),
-        workerPath: path.join(ROOT, 'camera', 'c410_worker.py'), outputDirectory: path.join(ROOT, 'data', 'camera', record.id, signature) }),
+        workerPath: c410WorkerPath(), outputDirectory: path.join(ROOT, 'data', 'camera', record.id, signature), env: cameraEnvironment() }),
     });
     const startupAssignments = await roleStore.read();
     await sensorRuntimeManager.reconcile(startupRegistry.sensors.filter((record) => isRuntimeEligible('sensor', record)).map((record) => runtimeConfiguration('sensor', record)), startupAssignments);
