@@ -5,7 +5,7 @@ import {
   TuyaCloudClient,
 } from '@smarthome/core';
 
-export const DEWIN_REFRESH_INTERVAL_MS = 60_000;
+export const DEWIN_REFRESH_INTERVAL_MS = 30 * 60 * 1000;
 export const DEWIN_STALE_AFTER_MS = 5 * 60_000;
 
 export { parseTuyaDatapoints, TuyaCloudClient };

@@ -2,12 +2,17 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   buildDewinSnapshot,
+  DEWIN_REFRESH_INTERVAL_MS,
   DewinService,
   parseTuyaDatapoints,
   TuyaCloudClient,
 } from '../src/dewin-service.js';
 
 const DEVICE_ID = 'bf0a19b9163f00415ba1o9';
+
+test('Dewin Cloud refresh runs every 30 minutes', () => {
+  assert.equal(DEWIN_REFRESH_INTERVAL_MS, 1_800_000);
+});
 
 function specification() {
   return {
