@@ -29,16 +29,16 @@ test('Dewin bootstrap migrates non-secret Device ID but no Tuya credentials', ()
 });
 
 test('v3 migration imports missing Dewin Device ID from legacy env without overwriting registry identity', async () => {
-  const directory = await mkdtemp(path.join(os.tmpdir(), 'pond-migrate-')); const filePath = path.join(directory, 'hardware.json'); const previous = process.env.TUYA_DEVICE_ID; process.env.TUYA_DEVICE_ID = 'legacy-env-id';
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'pond-migrate-')); const filePath = path.join(directory, 'hardware.json'); const previous = process.env.TUYA_DEWIN_ID; process.env.TUYA_DEWIN_ID = 'legacy-env-id';
   const legacy = { version: 3, plugs: [], cameras: [], sensors: [{ id: 'dewin-pond', alias: 'Dewin', model: '', protocol: 'tuya-cloud', connectionType: 'cloud', provider: 'Tuya Cloud', role: 'pond_temperature', verificationStatus: 'verified' }] };
   try { await writeFile(filePath, JSON.stringify(legacy)); const store = new HardwareRegistryStore({ filePath, defaults: defaultHardwareRegistry({ deviceList: [] }) }); const migrated = await store.read(); assert.equal(migrated.sensors[0].tuyaDeviceId, 'legacy-env-id'); assert.equal(store.legacyRoleAssignments['dewin-pond'], 'pond_temperature'); assert.ok(!Object.hasOwn(migrated.sensors[0], 'role')); }
-  finally { if (previous === undefined) delete process.env.TUYA_DEVICE_ID; else process.env.TUYA_DEVICE_ID = previous; await rm(directory, { recursive: true, force: true }); }
+  finally { if (previous === undefined) delete process.env.TUYA_DEWIN_ID; else process.env.TUYA_DEWIN_ID = previous; await rm(directory, { recursive: true, force: true }); }
 });
 
 test('real SmartHome v3 migration preserves existing and legacy roles before atomically persisting v4', async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'pond-real-v3-'));
   const hardwarePath = path.join(directory, 'hardware.json'); const rolesPath = path.join(directory, 'device-roles.json');
-  const previousDeviceId = process.env.TUYA_DEVICE_ID; process.env.TUYA_DEVICE_ID = 'legacy-tuya-device-id';
+  const previousDeviceId = process.env.TUYA_DEWIN_ID; process.env.TUYA_DEWIN_ID = 'legacy-tuya-device-id';
   const fixture = {
     version: 3,
     plugs: [
@@ -82,7 +82,7 @@ test('real SmartHome v3 migration preserves existing and legacy roles before ato
     const recovered = await runStartupMigration(); assert.equal(recovered.hardwareStore.pendingMigration, false); assert.deepEqual(recovered.assignments, manuallyReassigned);
     const second = await runStartupMigration(); assert.equal(second.hardwareStore.pendingMigration, false); assert.deepEqual(second.assignments, manuallyReassigned); assert.deepEqual(JSON.parse(await readFile(hardwarePath, 'utf8')), persistedHardware);
   } finally {
-    if (previousDeviceId === undefined) delete process.env.TUYA_DEVICE_ID; else process.env.TUYA_DEVICE_ID = previousDeviceId;
+    if (previousDeviceId === undefined) delete process.env.TUYA_DEWIN_ID; else process.env.TUYA_DEWIN_ID = previousDeviceId;
     await rm(directory, { recursive: true, force: true });
   }
 });

@@ -114,9 +114,9 @@ function cameraEnvironment() {
 
 function dewinConfiguredFromEnvironment() {
   return Boolean(
-    process.env.TUYA_CLIENT_ID?.trim()
-    && process.env.TUYA_CLIENT_SECRET?.trim()
-    && process.env.TUYA_DEVICE_ID?.trim(),
+    process.env.TUYA_CLIENT_ID_HOME?.trim()
+    && process.env.TUYA_CLIENT_SECRET_HOME?.trim()
+    && process.env.TUYA_DEWIN_ID?.trim(),
   );
 }
 
@@ -233,7 +233,7 @@ export function createPondServer({
   hardwareStore = new HardwareRegistryStore({
     filePath: DEFAULT_HARDWARE_FILE,
       defaults: defaultHardwareRegistry({
-      deviceList, cameraIp: process.env.TAPO_CAMERA_IP, dewinDeviceId: process.env.TUYA_DEVICE_ID?.trim() || '', dewinConfigured: dewinConfiguredFromEnvironment(),
+      deviceList, cameraIp: process.env.TAPO_CAMERA_IP, dewinDeviceId: process.env.TUYA_DEWIN_ID?.trim() || '', dewinConfigured: dewinConfiguredFromEnvironment(),
     }),
   }),
   verifyPlug = (candidate) => verifyTapoPlug(candidate, {
@@ -673,7 +673,7 @@ if (isMain) {
       defaults: defaultHardwareRegistry({
         deviceList: defaultDevices,
         cameraIp: process.env.TAPO_CAMERA_IP,
-        dewinDeviceId: process.env.TUYA_DEVICE_ID?.trim() || '',
+        dewinDeviceId: process.env.TUYA_DEWIN_ID?.trim() || '',
         dewinConfigured: dewinConfiguredFromEnvironment(),
       }),
     });

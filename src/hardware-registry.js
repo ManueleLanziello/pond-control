@@ -161,7 +161,7 @@ export class HardwareRegistryStore {
       for (const kind of HARDWARE_KINDS) for (const record of parsed[kind] || []) if (record.role && record.role !== 'none') this.legacyRoleAssignments[record.id] = record.role;
       for (const sensor of parsed.sensors || []) if (isLegacyDewinRecord(sensor)) sensor.model = DEWIN_SUPPORTED_MODEL;
       // Legacy Dewin identity was non-secret but lived in .env. Import it only when absent.
-      for (const sensor of parsed.sensors || []) if (!sensor.tuyaDeviceId && sensor.id === 'dewin-pond' && process.env.TUYA_DEVICE_ID?.trim()) sensor.tuyaDeviceId = process.env.TUYA_DEVICE_ID.trim();
+      for (const sensor of parsed.sensors || []) if (!sensor.tuyaDeviceId && sensor.id === 'dewin-pond' && process.env.TUYA_DEWIN_ID?.trim()) sensor.tuyaDeviceId = process.env.TUYA_DEWIN_ID.trim();
       const registry = validateHardwareRegistry(parsed, { allowIncomplete: true });
       if (Number(parsed.version || 1) < HARDWARE_REGISTRY_VERSION) {
         this.pendingMigration = true;

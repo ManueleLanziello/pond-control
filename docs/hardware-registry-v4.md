@@ -8,8 +8,8 @@ La versione 4 separa catalogo dei modelli, istanze fisiche, ruoli e runtime.
 
 ## Migrazione Dewin
 
-Le credenziali `TUYA_CLIENT_ID`, `TUYA_CLIENT_SECRET` e l'eventuale `TUYA_BASE_URL` restano in `.env`.
-Se un record legacy `dewin-pond` non contiene `tuyaDeviceId`, all'avvio viene letto il valore non segreto `TUYA_DEVICE_ID` da `.env`. Un valore gia presente nel registry non viene mai sovrascritto. Alla prima mutazione successiva il registry viene scritto in formato v4; `TUYA_DEVICE_ID` puo quindi essere rimosso da `.env` dopo aver verificato il valore in Settings.
+Le credenziali del progetto operativo Home Control 24/7, `TUYA_CLIENT_ID_HOME` e `TUYA_CLIENT_SECRET_HOME`, e l'eventuale `TUYA_BASE_URL` restano in `.env`. Le variabili `TUYA_CLIENT_ID_POND` e `TUYA_CLIENT_SECRET_POND` sono esclusivamente riferimenti legacy e non vengono usate dal runtime Dewin.
+Se un record legacy `dewin-pond` non contiene `tuyaDeviceId`, all'avvio viene letto il valore non segreto `TUYA_DEWIN_ID` da `.env`. Un valore gia presente nel registry non viene mai sovrascritto. Alla prima mutazione successiva il registry viene scritto in formato v4; `TUYA_DEWIN_ID` puo quindi essere rimosso da `.env` dopo aver verificato il valore in Settings.
 
 I ruoli legacy presenti in `hardware.json` vengono importati nel role store prima che il registry v4 venga persistito. La lettura della vecchia configurazione non scrive subito il file, evitando una finestra in cui un arresto durante startup possa perdere l'assegnazione.
 

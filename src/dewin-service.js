@@ -130,9 +130,9 @@ export class DewinService {
 }
 
 export function createDewinServiceFromEnvironment(options = {}) {
-  const clientId = process.env.TUYA_CLIENT_ID?.trim();
-  const clientSecret = process.env.TUYA_CLIENT_SECRET?.trim();
-  const deviceId = options.deviceId?.trim() || process.env.TUYA_DEVICE_ID?.trim();
+  const clientId = process.env.TUYA_CLIENT_ID_HOME?.trim();
+  const clientSecret = process.env.TUYA_CLIENT_SECRET_HOME?.trim();
+  const deviceId = options.deviceId?.trim() || process.env.TUYA_DEWIN_ID?.trim();
   if (!clientId || !clientSecret || !deviceId) throw new Error('Credenziali Tuya mancanti');
   const client = new TuyaCloudClient({
     clientId,
